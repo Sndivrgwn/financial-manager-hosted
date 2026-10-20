@@ -37,9 +37,15 @@ if (!SPREADSHEET_ID) {
   process.exit(1);
 }
 
+const credentials = JSON.parse(
+  process.env.GOOGLE_SERVICE_ACCOUNT_JSON
+);
+
 const auth = new google.auth.GoogleAuth({
-  keyFile: process.env.GOOGLE_APPLICATION_CREDENTIALS || path.join(__dirname, 'credentials', 'service-account.json'),
-  scopes: ['https://www.googleapis.com/auth/spreadsheets']
+  credentials,
+  scopes: [
+    'https://www.googleapis.com/auth/spreadsheets'
+  ]
 });
 const sheetsApi = google.sheets({ version: 'v4', auth });
 const app = express();
