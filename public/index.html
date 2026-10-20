@@ -1729,9 +1729,10 @@
       });
       let result;
       try { result = await response.json(); }
-      catch (_) { throw new Error('Respons server bukan JSON yang valid.'); }
-      if (!response.ok) throw new Error(result.message || `Permintaan gagal (HTTP ${response.status}).`);
-      if (result && result.success === false) throw new Error(result.message || 'Permintaan server gagal.');
+      catch (_) { throw new Error('Respons backend bukan JSON yang valid.'); }
+      if (!response.ok || (result && result.success === false)) {
+        throw new Error((result && result.message) || `Permintaan gagal (HTTP ${response.status}).`);
+      }
       return result;
     }
 
@@ -1748,20 +1749,14 @@
           appState.templates = normalizeArray(result.templates);
         }
       } catch (err) {
-        if (!appState.categories.length) {
-          appState.categories = [
-            { id: 'c1', name: 'Makanan & Minuman', type: 'expense', color: '#ec643d', icon: 'utensils', budget: 2000000 },
-            { id: 'c2', name: 'Gaji & Pendapatan', type: 'income', color: '#22c55e', icon: 'wallet', budget: 0 },
-            { id: 'c3', name: 'Transportasi', type: 'expense', color: '#3b82f6', icon: 'car', budget: 800000 }
-          ];
-        }
-        if (!appState.accounts.length) {
-          appState.accounts = [
-            { id: 'a1', name: 'BCA Utama', type: 'bank', openingBalance: 5000000 },
-            { id: 'a2', name: 'Dompet Tunai', type: 'cash', openingBalance: 350000 },
-            { id: 'a3', name: 'GoPay', type: 'ewallet', openingBalance: 150000 }
-          ];
-        }
+        // Jangan gunakan kategori/akun demo dengan ID palsu (c1/a1) saat server gagal.
+        // Itu membuat transaksi dikirim dengan ID yang tidak ada di Google Sheets.
+        console.error('[loadServerData] Gagal memuat data dari backend:', err);
+        appState.loadFailed = true;
+        appState.initialized = false;
+        renderAll();
+        toast('Gagal memuat data Google Sheets. Tunggu sebentar lalu muat ulang halaman.', 'error', { duration: 6000 });
+        return;
       }
 
       overlayPendingJobs();
