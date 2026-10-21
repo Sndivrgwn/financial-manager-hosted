@@ -979,6 +979,86 @@
         max-height: 92dvh;
       }
     }
+
+    /* Badge tidak boleh menyusut atau patah baris */
+.badge {
+  white-space: nowrap;
+  flex: none;
+  line-height: 1.2;
+}
+
+/* Ukuran kontrol lebih proporsional di mobile */
+@media (max-width: 767px) {
+  .btn-primary,
+  .btn-secondary,
+  .btn-danger,
+  .btn-danger-outline {
+    min-height: 38px;
+    padding: 7px 12px;
+    font-size: 13px;
+    border-radius: 9px;
+  }
+
+  /* Tombol di dalam grid/kolom jangan melebar penuh */
+  #clearFilters {
+    justify-self: end;
+    width: auto;
+  }
+
+  .icon-btn {
+    min-width: 36px;
+    min-height: 36px;
+    border-radius: 9px;
+  }
+
+  .field {
+    min-height: 40px;
+    padding: 8px 11px;
+    font-size: 14px;
+  }
+
+  .chip-amount {
+    min-height: 32px;
+    padding: 5px 10px;
+  }
+
+  .seg-btn {
+    min-height: 38px;
+    padding: 7px 4px;
+    font-size: 12px;
+  }
+
+  .type-btn {
+    min-height: 56px;
+    padding: 9px 4px;
+  }
+
+  .pick-chip {
+    min-height: 38px;
+    padding: 6px 10px;
+  }
+
+  .tx-details summary {
+    min-height: 38px;
+  }
+
+  #mobileNav .nav-item {
+    min-height: 46px;
+    padding: 6px 2px;
+  }
+
+  .fab {
+    width: 52px;
+    height: 52px;
+  }
+}
+
+/* Aturan (pointer: coarse) bawaan jangan membesarkan lagi di layar kecil */
+@media (max-width: 767px) and (pointer: coarse) {
+  .icon-btn { min-width: 36px; min-height: 36px; }
+  .chip-amount { min-height: 32px; }
+  .seg-btn { min-height: 38px; }
+}
   </style>
 </head>
 
@@ -1827,7 +1907,9 @@
           if (idx >= 0) list.splice(idx, 1);
         } else if (job.localRecord) {
           const rec = { ...job.localRecord, syncStatus: 'pending' };
-          if (idx >= 0) list[idx] = rec; else list.unshift(rec);
+          if (idx >= 0) list[idx] = rec;
+          else if (job.entity === 'transaction') list.push(rec);
+          else list.unshift(rec);
         }
       }
     }
@@ -2154,7 +2236,18 @@
       return (n > 0 ? '+' : '-') + formatMoney(Math.abs(n));
     }
 
-    const compareTx = (a, b) => getDate(b).localeCompare(getDate(a));
+    const compareTx = (a, b) => {
+    const byDate = getDate(b).localeCompare(getDate(a));
+    if (byDate) return byDate;
+
+    // Hari sama: pakai waktu dibuat jika ada
+    const ta = Date.parse(a.createdAt || ''), tb = Date.parse(b.createdAt || '');
+    if (!isNaN(ta) && !isNaN(tb) && ta !== tb) return tb - ta;
+
+    // Fallback: posisi di array (makin belakang = makin baru)
+    const list = appState.transactions;
+    return list.indexOf(b) - list.indexOf(a);
+  };
 
     function renderDashboard() {
       const key = $('dashPeriod').value;
@@ -2885,10 +2978,10 @@
 
       const isUpdate = Boolean(id);
       const localId = id || `local_${makeId()}`;
-      const record = { ...data, id: localId, syncStatus: 'pending' };
+      const record = { ...data, id: localId, syncStatus: 'pending', createdAt: new Date().toISOString() };
 
-      if (isUpdate) appState.transactions = appState.transactions.map(t => String(getId(t)) === String(id) ? record : t);
-      else appState.transactions.unshift(record);
+      if (isUpdate) appState.transactions = appState.transactions.map(t => String(getId(t)) === String(id) ? { ...record, createdAt: t.createdAt || record.createdAt } : t);
+      else appState.transactions.push(record);
 
       rememberAccount(type === 'transfer' ? data.fromAccountId : data.accountId);
 
