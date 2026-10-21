@@ -4,7 +4,7 @@
 <head>
   <base target="_top">
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <meta name="theme-color" content="#18181a">
   <title>Financial Manager</title>
 
@@ -176,6 +176,21 @@
       min-width: 40px;
       min-height: 40px;
       border-radius: 10px;
+    }
+
+    /* Sembunyikan scrollbar di modal, scroll tetap berfungsi */
+    .modal-card,
+    .tx-body,
+    .picker-list,
+    #templateChips {
+      scrollbar-width: none;       /* Firefox */
+      -ms-overflow-style: none;    /* Edge lama */
+    }
+    .modal-card::-webkit-scrollbar,
+    .tx-body::-webkit-scrollbar,
+    .picker-list::-webkit-scrollbar,
+    #templateChips::-webkit-scrollbar {
+      display: none;               /* Chrome, Safari, Android */
     }
 
     @media (pointer: coarse) {
@@ -517,8 +532,8 @@
         display: flex;
       }
 
-      main {
-        padding-bottom: 130px;
+      #main {
+        padding-bottom: calc(150px + env(safe-area-inset-bottom, 0px)) !important;
       }
     }
 
@@ -937,6 +952,32 @@
       margin-left: auto;
       flex: none;
       color: #ec643d;
+    }
+
+        /* Tinggi layar yang benar di mobile (address bar dinamis) */
+    body > .min-h-screen {
+      min-height: 100vh;
+      min-height: 100dvh;
+    }
+
+    /* Bottom nav & FAB aman dari notch/home bar */
+    #mobileNav {
+      padding-bottom: calc(8px + env(safe-area-inset-bottom, 0px));
+    }
+    .fab {
+      bottom: calc(84px + env(safe-area-inset-bottom, 0px));
+    }
+
+    /* Modal tidak terpotong di mobile */
+    .modal-card {
+      max-height: 90vh;
+      max-height: 90dvh;
+    }
+    @media (max-width: 767px) {
+      .modal-card {
+        max-height: 92vh;
+        max-height: 92dvh;
+      }
     }
   </style>
 </head>
