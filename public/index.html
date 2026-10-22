@@ -193,6 +193,31 @@
       display: none;               /* Chrome, Safari, Android */
     }
 
+    .type-grid.two { grid-template-columns: repeat(2, 1fr); }
+
+    .icon-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(40px, 1fr));
+      gap: 8px;
+    }
+    .icon-opt {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      height: 40px;
+      border: 1px solid #39393d;
+      border-radius: 10px;
+      background: #18181a;
+      color: #aaaab0;
+      transition: all .15s;
+    }
+    .icon-opt:hover { border-color: #5a5a60; color: #fff; }
+    .icon-opt.active {
+      border-color: var(--cat-color, #ec643d);
+      color: var(--cat-color, #ec643d);
+      background: color-mix(in srgb, var(--cat-color, #ec643d) 12%, transparent);
+    }
+
     @media (pointer: coarse) {
       .icon-btn {
         min-width: 44px;
@@ -1053,12 +1078,28 @@
   }
 }
 
-/* Aturan (pointer: coarse) bawaan jangan membesarkan lagi di layar kecil */
-@media (max-width: 767px) and (pointer: coarse) {
-  .icon-btn { min-width: 36px; min-height: 36px; }
-  .chip-amount { min-height: 32px; }
-  .seg-btn { min-height: 38px; }
-}
+  /* Aturan (pointer: coarse) bawaan jangan membesarkan lagi di layar kecil */
+  @media (max-width: 767px) and (pointer: coarse) {
+    .icon-btn { min-width: 36px; min-height: 36px; }
+    .chip-amount { min-height: 32px; }
+    .seg-btn { min-height: 38px; }
+  }
+
+  /* Tombol tidak boleh menyusut atau patah baris */
+  .btn-primary,
+  .btn-secondary,
+  .btn-danger,
+  .btn-danger-outline { 
+    white-space: nowrap;
+    flex-shrink: 0;
+  }
+
+  /* Judul/deskripsi di sebelah tombol yang boleh mengalah */
+  #view-categories > div:first-child > div,
+  #view-accounts > div:first-child > div {
+    min-width: 0;
+    flex: 1;
+  }
   </style>
 </head>
 
@@ -1495,36 +1536,69 @@
   </div>
 
   <!-- Category Modal -->
-  <div id="categoryModal" class="modal-backdrop hidden-view">
-    <div class="modal-card panel p-6">
-      <div class="mb-5 flex items-center justify-between border-b border-line pb-4">
-        <h2 id="categoryModalTitle" class="text-xl font-bold">Tambah Kategori</h2>
-        <button type="button" data-close-modal="categoryModal" class="icon-btn" aria-label="Tutup"><i data-lucide="x" aria-hidden="true"></i></button>
-      </div>
-      <form id="categoryForm" class="space-y-4">
-        <input id="categoryId" type="hidden">
-        <input id="categoryColor" type="hidden" value="#ec643d">
-        <div><label class="mb-2 block text-sm text-muted" for="categoryName">Nama Kategori</label><input id="categoryName" class="field" required maxlength="80">
-        </div>
-        <div>
-          <label class="mb-2 block text-sm text-muted" for="categoryType">Jenis</label><select id="categoryType" class="field"><option value="expense">Pengeluaran</option><option value="income">Pemasukan</option></select>
-        </div>
-        <div>
-          <label class="mb-2 block text-sm text-muted" for="categoryBudget">Batas Anggaran Bulanan (Rp) <span class="text-xs">(opsional)</span></label><input id="categoryBudget" type="number" min="0" placeholder="0 = Tidak dibatasi" class="field">
-        </div>
-        <div>
-          <label class="mb-2 block text-sm text-muted" for="categoryIcon">Ikon</label><select id="categoryIcon" class="field"></select>
-        </div>
-        <div>
-          <div class="mb-2 text-sm text-muted">Warna Tema</div>
-          <div id="categorySwatches" class="flex flex-wrap gap-2"></div>
-        </div>
-        <div class="flex justify-end gap-3 pt-2">
-          <button type="button" class="btn-secondary" data-close-modal="categoryModal">Batal</button><button class="btn-primary" type="submit">Simpan</button>
-        </div>
-      </form>
+<div id="categoryModal" class="modal-backdrop hidden-view">
+  <div class="modal-card panel p-6">
+    <div class="mb-5 flex items-center justify-between border-b border-line pb-4">
+      <h2 id="categoryModalTitle" class="text-xl font-bold">Tambah Kategori</h2>
+      <button type="button" data-close-modal="categoryModal" class="icon-btn" aria-label="Tutup"><i data-lucide="x" aria-hidden="true"></i></button>
     </div>
+    <form id="categoryForm" class="space-y-5">
+      <input id="categoryId" type="hidden">
+      <input id="categoryColor" type="hidden" value="#ec643d">
+      <input id="categoryIcon" type="hidden" value="tag">
+      <input id="categoryType" type="hidden" value="expense">
+
+      <!-- Pratinjau -->
+      <div class="flex items-center gap-3 rounded-xl border border-line bg-ink p-3" aria-hidden="true">
+        <span id="catPreviewIcon" class="tx-ico"></span>
+        <div class="min-w-0">
+          <div id="catPreviewName" class="truncate font-semibold text-white">Nama kategori</div>
+          <div id="catPreviewType" class="text-xs text-muted">Pengeluaran</div>
+        </div>
+      </div>
+
+      <div>
+        <label class="mb-2 block text-sm text-muted" for="categoryName">Nama Kategori</label>
+        <input id="categoryName" class="field" required maxlength="80" autocomplete="off" placeholder="Contoh: Makan, Transport, Gaji">
+      </div>
+
+      <div>
+        <div class="mb-2 text-sm text-muted">Jenis Kategori</div>
+        <div class="type-grid two" role="group" aria-label="Jenis kategori">
+          <button type="button" class="type-btn" data-category-type="expense"><i data-lucide="trending-down" class="h-5 w-5" aria-hidden="true"></i>Pengeluaran</button>
+          <button type="button" class="type-btn" data-category-type="income"><i data-lucide="trending-up" class="h-5 w-5" aria-hidden="true"></i>Pemasukan</button>
+        </div>
+      </div>
+
+      <div id="categoryBudgetWrap">
+        <label class="mb-2 block text-sm text-muted" for="categoryBudget">Batas Anggaran Bulanan (Rp) <span class="text-xs">(opsional)</span></label>
+        <input id="categoryBudget" type="text" inputmode="numeric" autocomplete="off" class="field text-lg font-bold" placeholder="0">
+        <div class="mt-2 flex flex-wrap gap-2">
+          <button type="button" class="chip-amount" data-budget-add="100000">+100rb</button>
+          <button type="button" class="chip-amount" data-budget-add="500000">+500rb</button>
+          <button type="button" class="chip-amount" data-budget-add="1000000">+1jt</button>
+          <button type="button" class="chip-amount" data-budget-clear="1">Reset</button>
+        </div>
+        <div class="mt-1.5 text-xs text-muted">Kosongkan jika tidak ingin dibatasi.</div>
+      </div>
+
+      <div>
+        <div class="mb-2 text-sm text-muted">Ikon</div>
+        <div id="categoryIconGrid" class="icon-grid" role="group" aria-label="Pilih ikon"></div>
+      </div>
+
+      <div>
+        <div class="mb-2 text-sm text-muted">Warna Tema</div>
+        <div id="categorySwatches" class="flex flex-wrap gap-2"></div>
+      </div>
+
+      <div class="flex justify-end gap-3 border-t border-line pt-4">
+        <button type="button" class="btn-secondary" data-close-modal="categoryModal">Batal</button>
+        <button class="btn-primary" type="submit">Simpan</button>
+      </div>
+    </form>
   </div>
+</div>
 
   <!-- Account Modal -->
   <div id="accountModal" class="modal-backdrop hidden-view">
@@ -2661,16 +2735,19 @@
       if (isLoading()) { grid.innerHTML = Array(3).fill('<div class="skeleton h-32 rounded-2xl"></div>').join(''); return; }
 
       const { cur } = getPeriodRanges('this_month');
-      const currentMonthTx = appState.transactions.filter(t => inRange(t, cur) && getType(t) === 'expense');
+      const monthTx = appState.transactions.filter(t => inRange(t, cur));
 
       grid.innerHTML = appState.categories.length
         ? appState.categories.map(c => {
             const color = safeColor(c.color);
             const cid = getId(c);
             const nm = escapeHtml(getName(c));
-            const spent = currentMonthTx.filter(t => String(getCatId(t)) === String(cid)).reduce((s, t) => s + getAmount(t), 0);
+            const isIncome = getType(c) === 'income';
+            const spent = monthTx
+              .filter(t => getType(t) === (isIncome ? 'income' : 'expense') && String(getCatId(t)) === String(cid))
+              .reduce((s, t) => s + getAmount(t), 0);
             const budget = Number(c.budget || 0);
-            const hasBudget = budget > 0;
+            const hasBudget = !isIncome && budget > 0;   /* anggaran hanya untuk pengeluaran */
             const pct = hasBudget ? Math.min(100, Math.round((spent / budget) * 100)) : 0;
             const isOver = hasBudget && spent > budget;
 
@@ -2683,7 +2760,7 @@
                 </div>
               </div>
               <div class="mt-4 font-semibold text-white text-base">${nm}</div>
-              <div class="mt-1 text-xs text-muted">Pengeluaran bulan ini: ${formatMoney(spent)}</div>
+              <div class="mt-1 text-xs text-muted">${isIncome ? 'Pemasukan' : 'Pengeluaran'} bulan ini: <span class="${isIncome ? 'positive font-semibold' : ''}">${formatMoney(spent)}</span></div>
 
               ${hasBudget ? `
                 <div class="mt-4">
@@ -3068,44 +3145,100 @@
 
     /* ---------- Category Logic ---------- */
     function initCategoryForm() {
-      $('categoryIcon').innerHTML = ICONS.map(([v, l]) => `<option value="${v}">${l}</option>`).join('');
+      $('categoryIconGrid').innerHTML = ICONS.map(([v, l]) =>
+        `<button type="button" class="icon-opt" data-cat-icon="${v}" title="${l}" aria-label="Ikon ${l}" aria-pressed="false"><i data-lucide="${v}" class="h-4 w-4" aria-hidden="true"></i></button>`).join('');
       $('categorySwatches').innerHTML = PALETTE.map(c =>
-        `<button type="button" class="swatch" data-color="${c}" style="background:${c}" aria-label="Warna ${c}"></button>`).join('');
+        `<button type="button" class="swatch" data-color="${c}" style="background:${c}" aria-label="Warna ${c}" aria-pressed="false"></button>`).join('');
     }
 
     function setCategoryColor(color) {
       $('categoryColor').value = color;
-      document.querySelectorAll('.swatch').forEach(s => s.classList.toggle('active', s.dataset.color === color));
+      $('categoryForm').style.setProperty('--cat-color', color);
+      document.querySelectorAll('.swatch').forEach(s => {
+        const on = s.dataset.color === color;
+        s.classList.toggle('active', on);
+        s.setAttribute('aria-pressed', String(on));
+      });
+      updateCategoryPreview();
+    }
+
+    function setCategoryIcon(icon) {
+      icon = safeIcon(icon);
+      $('categoryIcon').value = icon;
+      document.querySelectorAll('[data-cat-icon]').forEach(b => {
+        const on = b.dataset.catIcon === icon;
+        b.classList.toggle('active', on);
+        b.setAttribute('aria-pressed', String(on));
+      });
+      updateCategoryPreview();
+    }
+
+    function setCategoryType(type) {
+      type = type === 'income' ? 'income' : 'expense';
+      $('categoryType').value = type;
+      document.querySelectorAll('[data-category-type]').forEach(b => {
+        const on = b.dataset.categoryType === type;
+        b.classList.toggle('active', on);
+        b.setAttribute('aria-pressed', String(on));
+      });
+      /* Anggaran hanya untuk pengeluaran */
+      $('categoryBudgetWrap').classList.toggle('hidden-view', type !== 'expense');
+      updateCategoryPreview();
+    }
+
+    function updateCategoryPreview() {
+      const box = $('catPreviewIcon');
+      if (!box) return;
+      const color = safeColor($('categoryColor').value);
+      box.style.background = color + '26';
+      box.style.color = color;
+      const icon = safeIcon($('categoryIcon').value);
+      if (box.dataset.icon !== icon) {
+        box.dataset.icon = icon;
+        box.innerHTML = `<i data-lucide="${icon}" class="h-5 w-5" aria-hidden="true"></i>`;
+        refreshIcons();
+      }
+      $('catPreviewName').textContent = $('categoryName').value.trim() || 'Nama kategori';
+      $('catPreviewType').textContent = $('categoryType').value === 'income' ? 'Pemasukan' : 'Pengeluaran';
     }
 
     function openCategoryForm(id = '') {
       $('categoryForm').reset();
       $('categoryId').value = id;
       $('categoryModalTitle').textContent = id ? 'Edit Kategori' : 'Tambah Kategori';
+      $('categoryBudget').value = '';
+      setCategoryType('expense');
+      setCategoryIcon('tag');
       setCategoryColor(DEFAULT_COLOR);
+
       if (id) {
         const c = findCategory(id);
         if (c) {
           $('categoryName').value = getName(c);
-          $('categoryType').value = getType(c) || 'expense';
-          $('categoryBudget').value = c.budget || '';
-          if (c.icon) $('categoryIcon').value = safeIcon(c.icon);
+          setCategoryType(getType(c) || 'expense');
+          const b = Number(c.budget || 0);
+          $('categoryBudget').value = b > 0 ? formatNumber(b) : '';
+          setCategoryIcon(c.icon || 'tag');
           setCategoryColor(safeColor(c.color));
         }
       }
+      updateCategoryPreview();
+      refreshIcons();
       showModal('categoryModal');
     }
 
     function handleCategorySubmit(event) {
       event.preventDefault();
       const id = $('categoryId').value || null;
+      const type = $('categoryType').value;
       const data = {
         name: $('categoryName').value.trim(),
-        type: $('categoryType').value,
-        budget: Number($('categoryBudget').value) || 0,
+        type,
+        budget: type === 'expense' ? parseAmount($('categoryBudget').value) : 0,
         color: safeColor($('categoryColor').value),
         icon: safeIcon($('categoryIcon').value)
       };
+      if (!data.name) return toast('Nama kategori wajib diisi.', 'error');
 
       const localId = id || `local_${makeId()}`;
       const record = { ...data, id: localId, syncStatus: 'pending' };
@@ -3115,6 +3248,7 @@
 
       closeModal('categoryModal');
       renderAll();
+      toast(id ? 'Kategori diperbarui.' : 'Kategori ditambahkan.', 'success');
       enqueueJob({ entity: 'category', operation: id ? 'update' : 'create', method: id ? 'updateCategory' : 'createCategory', localId, localRecord: record, payload: id ? { ...data, id } : data });
     }
 
@@ -3258,6 +3392,11 @@
       setAmount(parseAmount($('txAmount').value));
       updateFormBalanceAndWarnings();
     });
+    $('categoryBudget').addEventListener('input', e => {
+      const n = parseAmount(e.target.value);
+      e.target.value = n ? formatNumber(n) : '';
+    });
+    $('categoryName').addEventListener('input', updateCategoryPreview);
     $('accountBalance').addEventListener('input', e => {
       const raw = e.target.value;
       if (raw.trim() === '-') return;
@@ -3293,6 +3432,10 @@
       if (!target) return;
       const d = target.dataset;
 
+      if (d.categoryType) setCategoryType(d.categoryType);
+      if (d.catIcon) setCategoryIcon(d.catIcon);
+      if (d.budgetAdd) $('categoryBudget').value = formatNumber(parseAmount($('categoryBudget').value) + Number(d.budgetAdd));
+      if (d.budgetClear) $('categoryBudget').value = '';
       if (d.pickMore) openPicker(d.pickMore);
       if (d.pickerId !== undefined) applyPick(d.pickerId);
       if (d.pickCat !== undefined) { $('txCategory').value = d.pickCat; populateTxSelects(); }
