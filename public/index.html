@@ -218,38 +218,118 @@
       background: color-mix(in srgb, var(--cat-color, #ec643d) 12%, transparent);
     }
 
-    .cat-tabs {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 4px;
-    padding: 4px;
-    width: 100%;
-    max-width: 420px;
-    border: 1px solid #39393d;
-    border-radius: 12px;
-    background: #18181a;
-  }
-  .cat-tab {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 8px;
-    min-height: 40px;
-    padding: 8px 12px;
-    border-radius: 9px;
-    font-size: 13px;
-    color: #aaaab0;
-    white-space: nowrap;
-    transition: color .15s, background .15s;
-  }
-  .cat-tab:hover { color: #fff; }
-  .cat-count {
-    padding: 1px 7px;
-    border-radius: 999px;
-    font-size: 11px;
-    background: #303034;
-  }
-  .cat-tab.active .cat-count { background: rgba(0, 0, 0, .2); }
+      .cat-tabs {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 4px;
+      padding: 4px;
+      width: 100%;
+      max-width: 420px;
+      border: 1px solid #39393d;
+      border-radius: 12px;
+      background: #18181a;
+    }
+    .cat-tab {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      min-height: 40px;
+      padding: 8px 12px;
+      border-radius: 9px;
+      font-size: 13px;
+      color: #aaaab0;
+      white-space: nowrap;
+      transition: color .15s, background .15s;
+    }
+    .cat-tab:hover { color: #fff; }
+    .cat-count {
+      padding: 1px 7px;
+      border-radius: 999px;
+      font-size: 11px;
+      background: #303034;
+    }
+    .cat-tab.active .cat-count { background: rgba(0, 0, 0, .2); }
+      /* Sembunyikan semua scrollbar, scroll tetap berfungsi */
+    * {
+      scrollbar-width: none;        /* Firefox */
+      -ms-overflow-style: none;     /* Edge lama */
+    }
+    *::-webkit-scrollbar,
+    html::-webkit-scrollbar,
+    body::-webkit-scrollbar {
+      display: none;                /* Chrome, Safari, Edge, Android */
+      width: 0;
+      height: 0;
+    }
+
+    /* Template cepat */
+    .qt-list {
+      display: flex;
+      gap: 10px;
+      overflow-x: auto;
+      scroll-snap-type: x proximity;
+    }
+    .qt-card {
+      flex: none;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      min-width: 150px;
+      max-width: 230px;
+      padding: 10px 12px;
+      border: 1px solid #39393d;
+      border-radius: 12px;
+      background: #18181a;
+      text-align: left;
+      scroll-snap-align: start;
+      transition: border-color .15s, transform .1s;
+    }
+    .qt-card:hover { border-color: var(--qt, #ec643d); }
+    .qt-card:active { transform: scale(.97); }
+    .qt-empty { font-size: 13px; color: #aaaab0; }
+    .qt-wrap { position: relative; }
+    .qt-list { scroll-snap-type: none; cursor: grab; }
+    .qt-list.dragging { cursor: grabbing; user-select: none; }
+    .qt-card { user-select: none; -webkit-user-drag: none; }
+
+    /* Bayangan di tepi yang masih bisa digeser */
+    .qt-wrap.can-right .qt-list { -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 40px), transparent); mask-image: linear-gradient(to right, #000 calc(100% - 40px), transparent); }
+    .qt-wrap.can-left .qt-list { -webkit-mask-image: linear-gradient(to left, #000 calc(100% - 40px), transparent); mask-image: linear-gradient(to left, #000 calc(100% - 40px), transparent); }
+    .qt-wrap.can-left.can-right .qt-list { -webkit-mask-image: linear-gradient(to right, transparent, #000 40px, #000 calc(100% - 40px), transparent); mask-image: linear-gradient(to right, transparent, #000 40px, #000 calc(100% - 40px), transparent); }
+
+    /* Tombol panah (desktop) */
+    .qt-nav {
+      display: none;
+      position: absolute;
+      top: 50%;
+      transform: translateY(-50%);
+      z-index: 2;
+      width: 32px;
+      height: 32px;
+      align-items: center;
+      justify-content: center;
+      border: 1px solid #39393d;
+      border-radius: 999px;
+      background: #222225;
+      color: #fff;
+      box-shadow: 0 4px 12px rgb(0 0 0 / 40%);
+    }
+    .qt-nav:hover { border-color: #ec643d; color: #ec643d; }
+    .qt-prev { left: -6px; }
+    .qt-next { right: -6px; }
+    .qt-wrap.can-left .qt-prev,
+    .qt-wrap.can-right .qt-next { display: flex; }
+
+    .qt-more { border-style: dashed; }
+    .qt-more:hover { border-color: #ec643d; }
+    .tpl-row { display: flex; align-items: center; gap: 4px; }
+    .tpl-row .picker-row { flex: 1; min-width: 0; }
+
+    /* Di layar sentuh cukup geser dengan jari */
+    @media (pointer: coarse) {
+      .qt-nav { display: none !important; }
+    }
 
     @media (pointer: coarse) {
       .icon-btn {
@@ -303,7 +383,15 @@
     }
 
     .table-wrap {
-      overflow-x: auto;
+    scrollbar-width: thin;
+    }
+    .table-wrap::-webkit-scrollbar {
+      display: block;
+      height: 6px;
+    }
+    .table-wrap::-webkit-scrollbar-thumb {
+      background: #39393d;
+      border-radius: 999px;
     }
 
     th {
@@ -1226,6 +1314,17 @@
 
       <!-- Dashboard View -->
       <section id="view-dashboard" class="space-y-6" aria-label="Dashboard">
+        <div class="panel qt-panel p-4">
+          <div class="mb-3">
+            <h2 class="flex items-center gap-2 text-sm font-semibold"><i data-lucide="zap" class="h-4 w-4 text-accent" aria-hidden="true"></i> Template Cepat</h2>
+            <p class="mt-0.5 text-xs text-muted">Ketuk untuk langsung mencatat transaksi hari ini</p>
+          </div>
+          <div class="qt-wrap">
+            <button type="button" class="qt-nav qt-prev" data-qt-scroll="-1" aria-label="Geser ke kiri"><i data-lucide="chevron-left" class="h-4 w-4" aria-hidden="true"></i></button>
+            <div class="qt-list"></div>
+            <button type="button" class="qt-nav qt-next" data-qt-scroll="1" aria-label="Geser ke kanan"><i data-lucide="chevron-right" class="h-4 w-4" aria-hidden="true"></i></button>
+          </div>
+        </div>
         <div class="flex items-center justify-between gap-3">
           <label for="dashPeriod" class="text-sm font-medium text-muted">Periode Analisis</label>
           <select id="dashPeriod" class="field w-auto min-w-[11rem] cursor-pointer">
@@ -1349,6 +1448,13 @@
 
       <!-- Transactions View -->
       <section id="view-transactions" class="hidden-view space-y-5" aria-label="Transaksi">
+        <div class="panel qt-panel p-4">
+          <div class="mb-3">
+            <h2 class="flex items-center gap-2 text-sm font-semibold"><i data-lucide="zap" class="h-4 w-4 text-accent" aria-hidden="true"></i> Template Cepat</h2>
+            <p class="mt-0.5 text-xs text-muted">Ketuk untuk langsung mencatat transaksi hari ini</p>
+          </div>
+          <div class="qt-list"></div>
+        </div>
         <div class="panel grid grid-cols-1 gap-3 p-4 md:grid-cols-[1fr_auto_auto_auto_auto]">
           <input id="searchTransaction" class="field" placeholder="Cari deskripsi, catatan..." aria-label="Cari transaksi">
           <select id="filterPeriod" class="field md:w-44" aria-label="Filter periode">
@@ -1725,6 +1831,20 @@
         <input id="pickerSearch" class="field" type="search" autocomplete="off" placeholder="Cari..." aria-label="Cari">
       </div>
       <div id="pickerList" class="picker-list"></div>
+    </div>
+  </div>
+
+  <!-- Template Modal (lihat semua) -->
+  <div id="templateModal" class="modal-backdrop hidden-view">
+    <div class="modal-card panel picker-sheet">
+      <div class="flex items-center justify-between px-5 pb-3 pt-4">
+        <h2 id="templateModalTitle" class="text-lg font-bold">Semua template</h2>
+        <button type="button" class="icon-btn hover:bg-[#303034]" data-close-modal="templateModal" aria-label="Tutup"><i data-lucide="x" aria-hidden="true"></i></button>
+      </div>
+      <div class="px-5 pb-3">
+        <input id="templateSearch" class="field" type="search" autocomplete="off" placeholder="Cari template..." aria-label="Cari template">
+      </div>
+      <div id="templateList" class="picker-list"></div>
     </div>
   </div>
 
@@ -2190,6 +2310,7 @@
       $('pageEyebrow').textContent = eyebrow;
       $('pageTitle').textContent = title;
       $('pageDescription').textContent = description;
+      requestAnimationFrame(updateAllQtNav);
       window.scrollTo({ top: 0 });
     }
 
@@ -2318,6 +2439,7 @@
       renderTransactions();
       renderCategories();
       renderAccounts();
+      renderQuickTemplates();   
       updateSyncIndicator();
       refreshIcons();
     }
@@ -2802,6 +2924,239 @@
       renderTemplateChips();
       enqueueJob({ entity: 'template', operation: 'delete', method: 'deleteTemplate', localId: tplId, payload: { id: tplId } });
       toast(`Template "${name}" dihapus.`, 'info');
+    }
+
+    /* ---------- Template Cepat (sekali ketuk) ---------- */
+    const qtBusy = new Set();
+
+    /* Urutkan template: paling sering dipakai di depan */
+    function templatesByUsage() {
+      const keyOf = (type, title, a, b) => [type, String(title).toLowerCase(), String(a ?? ''), String(b ?? '')].join('|');
+      const use = new Map();
+
+      appState.transactions.forEach(t => {
+        const type = getType(t);
+        const k = type === 'transfer'
+          ? keyOf(type, getName(t), t.fromAccountId, t.toAccountId)
+          : keyOf(type, getName(t), getCatId(t), getAccId(t));
+        use.set(k, (use.get(k) || 0) + 1);
+      });
+
+      const countOf = tpl => {
+        const type = getType(tpl) || 'expense';
+        const k = type === 'transfer'
+          ? keyOf(type, getName(tpl), tpl.fromAccountId, tpl.toAccountId)
+          : keyOf(type, getName(tpl), tpl.categoryId, tpl.accountId);
+        return use.get(k) || 0;
+      };
+
+      /* Urutan sama dipertahankan sesuai urutan pembuatan */
+      return appState.templates
+        .map((t, i) => ({ t, i, n: countOf(t) }))
+        .sort((a, b) => b.n - a.n || a.i - b.i)
+        .map(x => x.t);
+    }
+
+    function quickTemplateHtml(t) {
+      const type = getType(t) || 'expense';
+      const isTransfer = type === 'transfer';
+      const c = isTransfer ? null : findCategory(t.categoryId);
+      const color = isTransfer ? '#3b82f6' : c ? safeColor(c.color) : '#77777e';
+      const icon = isTransfer ? 'arrow-left-right' : safeIcon(c?.icon);
+      const amt = getAmount(t);
+      const cls = type === 'income' ? 'positive' : type === 'expense' ? 'negative' : 'text-blue-400';
+      const prefix = type === 'income' ? '+' : type === 'expense' ? '-' : '⇄ ';
+      const title = escapeHtml(getName(t));
+      return `<button type="button" class="qt-card" style="--qt:${color}" data-quick-template="${escapeHtml(getId(t))}" aria-label="Catat template ${title}">
+        <span class="tx-ico" style="background:${color}26;color:${color}"><i data-lucide="${icon}" class="h-5 w-5" aria-hidden="true"></i></span>
+        <span class="min-w-0">
+          <span class="block truncate text-sm font-semibold text-white">${title}</span>
+          <span class="block text-xs font-semibold ${amt > 0 ? cls : 'text-muted'}">${amt > 0 ? prefix + formatMoney(amt) : 'Isi nominal'}</span>
+        </span>
+      </button>`;
+    }
+
+    function renderQuickTemplates() {
+      let html;
+      if (isLoading()) {
+        html = Array(3).fill('<div class="skeleton h-14 w-40 flex-none rounded-xl"></div>').join('');
+      } else if (appState.templates.length) {
+        const all = templatesByUsage();
+        html = all.slice(0, QT_LIMIT).map(quickTemplateHtml).join('');
+        if (all.length > QT_LIMIT) {
+          html += `<button type="button" class="qt-card qt-more" data-qt-all="1" aria-label="Lihat semua ${all.length} template">
+            <span class="tx-ico" style="background:#303034;color:#aaaab0"><i data-lucide="layout-grid" class="h-5 w-5" aria-hidden="true"></i></span>
+            <span class="min-w-0">
+              <span class="block text-sm font-semibold text-white">Lihat semua</span>
+              <span class="block text-xs text-muted">${all.length} template</span>
+            </span>
+          </button>`;
+        }
+      } else {
+        html = `<div class="qt-empty">Belum ada template. Buat dari form transaksi: <b>Tambah detail → Simpan sebagai template cepat</b>.
+          <button type="button" class="ml-1 font-semibold text-accent underline" data-action="add-transaction">Buat sekarang</button></div>`;
+      }
+      document.querySelectorAll('.qt-list').forEach(el => { el.innerHTML = html; });
+      requestAnimationFrame(updateAllQtNav);
+    }
+
+    function quickAddFromTemplate(tplId) {
+      const tpl = appState.templates.find(t => String(getId(t)) === String(tplId));
+      if (!tpl || qtBusy.has(String(tplId))) return;
+      closeModal('templateModal');
+      const type = getType(tpl) || 'expense';
+      const isTransfer = type === 'transfer';
+      const amount = getAmount(tpl);
+      const accOk = id => appState.accounts.some(a => String(getId(a)) === String(id));
+
+      const complete = amount > 0 && (isTransfer
+        ? accOk(tpl.fromAccountId) && accOk(tpl.toAccountId) && String(tpl.fromAccountId) !== String(tpl.toAccountId)
+        : Boolean(findCategory(tpl.categoryId)) && accOk(tpl.accountId));
+
+      /* Template belum lengkap: buka form dengan data template */
+      if (!complete) {
+        openTransactionForm();
+        useTemplate(tplId);
+        toast('Template belum lengkap. Lengkapi dulu lalu simpan.', 'info');
+        return;
+      }
+
+      /* Cegah ketuk ganda */
+      qtBusy.add(String(tplId));
+      setTimeout(() => qtBusy.delete(String(tplId)), 800);
+
+      const data = {
+        title: getName(tpl) || (isTransfer ? 'Transfer Antar Akun' : categoryName(tpl.categoryId)),
+        type, amount, date: today(), notes: ''
+      };
+      if (isTransfer) {
+        data.fromAccountId = tpl.fromAccountId;
+        data.toAccountId = tpl.toAccountId;
+      } else {
+        data.categoryId = tpl.categoryId;
+        data.accountId = tpl.accountId;
+      }
+
+      const localId = `local_${makeId()}`;
+      const record = { ...data, id: localId, syncStatus: 'pending', createdAt: new Date().toISOString() };
+      appState.transactions.push(record);
+      rememberAccount(isTransfer ? data.fromAccountId : data.accountId);
+
+      enqueueJob({ entity: 'transaction', operation: 'create', method: 'createTransaction', localId, localRecord: record, payload: data });
+      renderAll();
+      toast(`"${data.title}" tercatat.`, 'success', { actionLabel: 'Batalkan', onAction: () => undoQuickAdd(record), duration: 5000 });
+    }
+
+    function undoQuickAdd(record) {
+      const idx = appState.transactions.indexOf(record);
+      if (idx < 0) return toast('Transaksi tidak ditemukan.', 'error');
+      appState.transactions.splice(idx, 1);
+      const id = getId(record);
+      enqueueJob({ entity: 'transaction', operation: 'delete', method: 'deleteTransaction', localId: id, payload: { id } });
+      renderAll();
+      toast('Dibatalkan.', 'success');
+    }
+
+    const QT_LIMIT = 10;
+
+    function templateRowHtml(t) {
+      const type = getType(t) || 'expense';
+      const isTransfer = type === 'transfer';
+      const c = isTransfer ? null : findCategory(t.categoryId);
+      const color = isTransfer ? '#3b82f6' : c ? safeColor(c.color) : '#77777e';
+      const icon = isTransfer ? 'arrow-left-right' : safeIcon(c?.icon);
+      const amt = getAmount(t);
+      const cls = type === 'income' ? 'positive' : type === 'expense' ? 'negative' : 'text-blue-400';
+      const prefix = type === 'income' ? '+' : type === 'expense' ? '-' : '⇄ ';
+      const meta = isTransfer
+        ? `${accountName(t.fromAccountId)} → ${accountName(t.toAccountId)}`
+        : `${categoryName(t.categoryId)} · ${accountName(t.accountId)}`;
+      const id = escapeHtml(getId(t));
+      const title = escapeHtml(getName(t));
+      return `<div class="tpl-row">
+        <button type="button" class="picker-row" data-quick-template="${id}" aria-label="Catat template ${title}">
+          <span class="pc-ico" style="background:${color}26;color:${color}"><i data-lucide="${icon}" class="h-4 w-4" aria-hidden="true"></i></span>
+          <span class="min-w-0 flex-1">
+            <span class="block truncate text-sm font-medium">${title}</span>
+            <small class="block truncate">${escapeHtml(meta)}</small>
+          </span>
+          <span class="flex-none text-sm font-semibold ${amt > 0 ? cls : 'text-muted'}">${amt > 0 ? prefix + formatMoney(amt) : 'Isi nominal'}</span>
+        </button>
+        <button type="button" class="icon-btn text-muted hover:text-red-400" data-modal-delete-template="${id}" aria-label="Hapus template ${title}"><i data-lucide="trash-2" class="h-4 w-4" aria-hidden="true"></i></button>
+      </div>`;
+    }
+
+    function renderTemplateModal() {
+      const q = $('templateSearch').value.trim().toLowerCase();
+      const items = templatesByUsage().filter(t =>
+        !q || getName(t).toLowerCase().includes(q) || categoryName(t.categoryId).toLowerCase().includes(q));
+      $('templateModalTitle').textContent = `Semua template (${appState.templates.length})`;
+      $('templateList').innerHTML = items.length
+        ? items.map(templateRowHtml).join('')
+        : `<div class="p-6 text-center text-sm text-muted">${appState.templates.length ? `Tidak ada hasil untuk "${escapeHtml(q)}".` : 'Belum ada template.'}</div>`;
+      refreshIcons();
+    }
+
+    function openTemplateModal() {
+      $('templateSearch').value = '';
+      renderTemplateModal();
+      showModal('templateModal');
+      setTimeout(() => $('templateSearch').focus(), 60);
+    }
+
+    async function removeTemplateFromModal(id) {
+      const tpl = appState.templates.find(t => String(getId(t)) === String(id));
+      if (!tpl) return;
+      if (!(await confirmDialog(`Hapus template "${getName(tpl)}"?`))) return;
+      deleteTemplate(id);
+      renderTemplateModal();
+    }
+
+    function updateQtNav(list) {
+      const wrap = list.closest('.qt-wrap');
+      if (!wrap) return;
+      const max = list.scrollWidth - list.clientWidth;
+      wrap.classList.toggle('can-left', list.scrollLeft > 4);
+      wrap.classList.toggle('can-right', list.scrollLeft < max - 4);
+    }
+    const updateAllQtNav = () => document.querySelectorAll('.qt-list').forEach(updateQtNav);
+
+    function setupQuickTemplates() {
+      $('templateSearch').addEventListener('input', renderTemplateModal);
+      document.querySelectorAll('.qt-list').forEach(list => {
+        list.addEventListener('scroll', () => updateQtNav(list), { passive: true });
+
+        /* Mouse wheel menggeser ke samping (di ujung, scroll halaman tetap jalan) */
+        list.addEventListener('wheel', e => {
+          const max = list.scrollWidth - list.clientWidth;
+          if (max <= 0 || Math.abs(e.deltaY) <= Math.abs(e.deltaX)) return;
+          const atStart = list.scrollLeft <= 0 && e.deltaY < 0;
+          const atEnd = list.scrollLeft >= max - 1 && e.deltaY > 0;
+          if (atStart || atEnd) return;
+          e.preventDefault();
+          list.scrollLeft += e.deltaY;
+        }, { passive: false });
+
+        /* Drag dengan mouse */
+        let down = false, moved = false, startX = 0, startLeft = 0;
+        list.addEventListener('pointerdown', e => {
+          if (e.pointerType !== 'mouse' || e.button !== 0) return;
+          down = true; moved = false; startX = e.clientX; startLeft = list.scrollLeft;
+        });
+        window.addEventListener('pointermove', e => {
+          if (!down) return;
+          const dx = e.clientX - startX;
+          if (Math.abs(dx) > 5) { moved = true; list.classList.add('dragging'); }
+          if (moved) list.scrollLeft = startLeft - dx;
+        });
+        window.addEventListener('pointerup', () => { down = false; list.classList.remove('dragging'); });
+
+        /* Setelah drag, jangan anggap sebagai ketukan template */
+        list.addEventListener('click', e => {
+          if (moved) { e.preventDefault(); e.stopPropagation(); moved = false; }
+        }, true);
+      });
+      window.addEventListener('resize', updateAllQtNav);
     }
 
     function categoryCardHtml(c, monthTx, isIncome) {
@@ -3542,6 +3897,14 @@
       if (d.swapAccounts !== undefined) swapTransferAccounts();
       if (d.suggest !== undefined) applySuggestion(d.suggest);
       if (d.useTemplate) useTemplate(d.useTemplate);
+      if (d.qtScroll) {
+        const list = target.closest('.qt-wrap').querySelector('.qt-list');
+        list.scrollBy({ left: Number(d.qtScroll) * list.clientWidth * 0.8, behavior: 'smooth' });
+      }
+      if (d.qtAll) openTemplateModal();
+      if (d.modalDeleteTemplate) removeTemplateFromModal(d.modalDeleteTemplate);
+      if (d.quickTemplate) quickAddFromTemplate(d.quickTemplate);
+      if (d.action === 'add-transaction') openTransactionForm();  
       if (d.deleteTemplate) deleteTemplate(d.deleteTemplate);
       if (d.editTransaction) openTransactionForm(d.editTransaction);
       if (d.deleteTransaction) requestDeleteTransaction(d.deleteTransaction);
@@ -3568,6 +3931,7 @@
     /* ---------- Initialization ---------- */
     setupModalA11y();
     initCategoryForm();
+    setupQuickTemplates();
     loadQueue();
     renderAll();
     navigate('dashboard');
