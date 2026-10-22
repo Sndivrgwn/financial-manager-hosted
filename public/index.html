@@ -243,8 +243,6 @@
     transition: color .15s, background .15s;
   }
   .cat-tab:hover { color: #fff; }
-  .cat-tab.active[data-cat-tab="expense"] { background: #ec643d; color: #18181a; font-weight: 700; }
-  .cat-tab.active[data-cat-tab="income"]  { background: #22c55e; color: #18181a; font-weight: 700; }
   .cat-count {
     padding: 1px 7px;
     border-radius: 999px;
@@ -1135,6 +1133,33 @@
     min-width: 0;
     flex: 1;
   }
+
+  /* Switch kategori dengan animasi slide */
+  .cat-tabs { position: relative; }
+
+  .cat-tab {
+    position: relative;
+    z-index: 1;
+    transition: color .25s ease;
+  }
+  .cat-tab.active { color: #18181a; font-weight: 700; }
+
+  .cat-indicator {
+    position: absolute;
+    top: 4px;
+    bottom: 4px;
+    left: 4px;
+    width: calc((100% - 12px) / 2);
+    border-radius: 9px;
+    background: #ec643d;
+    box-shadow: 0 2px 8px rgb(0 0 0 / 30%);
+    transition: transform .3s cubic-bezier(.4, 0, .2, 1), background-color .3s ease;
+    pointer-events: none;
+  }
+  .cat-tabs[data-active="income"] .cat-indicator {
+    transform: translateX(calc(100% + 4px));
+    background: #22c55e;
+  }
   </style>
 </head>
 
@@ -1394,7 +1419,8 @@
         <button id="addCategoryBtn" class="btn-primary">+ Kategori</button>
       </div>
 
-      <div class="cat-tabs" role="tablist" aria-label="Jenis kategori">
+      <div class="cat-tabs" role="tablist" aria-label="Jenis kategori" data-active="expense">
+       <span class="cat-indicator" aria-hidden="true"></span>
         <button type="button" role="tab" class="cat-tab" data-cat-tab="expense" aria-selected="true">
           <i data-lucide="trending-down" class="h-4 w-4" aria-hidden="true"></i>
           <span>Pengeluaran</span><span id="catCountExpense" class="cat-count">0</span>
@@ -2836,6 +2862,7 @@
         b.classList.toggle('active', on);
         b.setAttribute('aria-selected', String(on));
       });
+      document.querySelector('.cat-tabs').dataset.active = categoryTab;
 
       const total = sumOf(monthTx, categoryTab);
       $('categoriesSummary').innerHTML =
