@@ -218,6 +218,41 @@
       background: color-mix(in srgb, var(--cat-color, #ec643d) 12%, transparent);
     }
 
+    .cat-tabs {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 4px;
+    padding: 4px;
+    width: 100%;
+    max-width: 420px;
+    border: 1px solid #39393d;
+    border-radius: 12px;
+    background: #18181a;
+  }
+  .cat-tab {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    min-height: 40px;
+    padding: 8px 12px;
+    border-radius: 9px;
+    font-size: 13px;
+    color: #aaaab0;
+    white-space: nowrap;
+    transition: color .15s, background .15s;
+  }
+  .cat-tab:hover { color: #fff; }
+  .cat-tab.active[data-cat-tab="expense"] { background: #ec643d; color: #18181a; font-weight: 700; }
+  .cat-tab.active[data-cat-tab="income"]  { background: #22c55e; color: #18181a; font-weight: 700; }
+  .cat-count {
+    padding: 1px 7px;
+    border-radius: 999px;
+    font-size: 11px;
+    background: #303034;
+  }
+  .cat-tab.active .cat-count { background: rgba(0, 0, 0, .2); }
+
     @media (pointer: coarse) {
       .icon-btn {
         min-width: 44px;
@@ -1351,15 +1386,28 @@
 
       <!-- Categories & Budget View -->
       <section id="view-categories" class="hidden-view space-y-5" aria-label="Kategori dan anggaran">
-        <div class="flex items-center justify-between gap-3">
-          <div>
-            <h2 class="font-semibold">Kategori & Batas Anggaran</h2>
-            <p class="mt-1 text-sm text-muted">Kelola kategori dan pantau batas pengeluaran bulanan.</p>
-          </div>
-          <button id="addCategoryBtn" class="btn-primary">+ Kategori</button>
+      <div class="flex items-center justify-between gap-3">
+        <div>
+          <h2 class="font-semibold">Kategori & Batas Anggaran</h2>
+          <p class="mt-1 text-sm text-muted">Kelola kategori dan pantau batas pengeluaran bulanan.</p>
         </div>
-        <div id="categoriesGrid" class="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3"></div>
-      </section>
+        <button id="addCategoryBtn" class="btn-primary">+ Kategori</button>
+      </div>
+
+      <div class="cat-tabs" role="tablist" aria-label="Jenis kategori">
+        <button type="button" role="tab" class="cat-tab" data-cat-tab="expense" aria-selected="true">
+          <i data-lucide="trending-down" class="h-4 w-4" aria-hidden="true"></i>
+          <span>Pengeluaran</span><span id="catCountExpense" class="cat-count">0</span>
+        </button>
+        <button type="button" role="tab" class="cat-tab" data-cat-tab="income" aria-selected="false">
+          <i data-lucide="trending-up" class="h-4 w-4" aria-hidden="true"></i>
+          <span>Pemasukan</span><span id="catCountIncome" class="cat-count">0</span>
+        </button>
+      </div>
+
+      <div id="categoriesSummary" class="text-sm text-muted" role="status"></div>
+      <div id="categoriesGrid" class="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3"></div>
+    </section>
 
       <!-- Accounts View -->
       <section id="view-accounts" class="hidden-view space-y-5" aria-label="Akun keuangan">
@@ -2730,55 +2778,77 @@
       toast(`Template "${name}" dihapus.`, 'info');
     }
 
+    function categoryCardHtml(c, monthTx, isIncome) {
+    const color = safeColor(c.color);
+    const cid = getId(c);
+    const nm = escapeHtml(getName(c));
+    const spent = monthTx
+      .filter(t => getType(t) === (isIncome ? 'income' : 'expense') && String(getCatId(t)) === String(cid))
+      .reduce((s, t) => s + getAmount(t), 0);
+    const budget = Number(c.budget || 0);
+    const hasBudget = !isIncome && budget > 0;
+    const pct = hasBudget ? Math.min(100, Math.round((spent / budget) * 100)) : 0;
+    const isOver = hasBudget && spent > budget;
+
+    return `<div class="panel p-5">
+      <div class="flex items-start justify-between">
+        <div class="flex h-10 w-10 items-center justify-center rounded-xl" style="background:${color}26;color:${color}"><i data-lucide="${safeIcon(c.icon)}" aria-hidden="true"></i></div>
+        <div class="flex gap-2">
+          <button type="button" class="icon-btn border border-line hover:border-accent" data-edit-category="${escapeHtml(cid)}" title="Edit" aria-label="Edit kategori ${nm}"><i data-lucide="pencil" class="h-4 w-4" aria-hidden="true"></i></button>
+          <button type="button" class="icon-btn border border-line hover:border-red-500" data-delete-category="${escapeHtml(cid)}" title="Hapus" aria-label="Hapus kategori ${nm}"><i data-lucide="trash-2" class="h-4 w-4" aria-hidden="true"></i></button>
+        </div>
+      </div>
+      <div class="mt-4 font-semibold text-white text-base">${nm}</div>
+      <div class="mt-1 text-xs text-muted">${isIncome ? 'Pemasukan' : 'Pengeluaran'} bulan ini: <span class="${isIncome ? 'positive font-semibold' : ''}">${formatMoney(spent)}</span></div>
+      ${hasBudget ? `
+        <div class="mt-4">
+          <div class="flex justify-between text-xs mb-1.5">
+            <span class="${isOver ? 'negative font-semibold' : 'text-muted'}">Anggaran: ${formatMoney(budget)}</span>
+            <span class="${isOver ? 'negative font-semibold' : 'text-muted'}">${pct}%</span>
+          </div>
+          <div class="w-full bg-[#18181a] h-2 rounded-full overflow-hidden border border-line" role="progressbar" aria-valuenow="${pct}" aria-valuemin="0" aria-valuemax="100" aria-label="Pemakaian anggaran ${nm}">
+            <div class="h-full rounded-full ${isOver ? 'bg-accent' : 'bg-emerald-500'}" style="width: ${pct}%"></div>
+          </div>
+        </div>` : ''}
+    </div>`;
+  }
+    let categoryTab = 'expense';
+
     function renderCategories() {
       const grid = $('categoriesGrid');
-      if (isLoading()) { grid.innerHTML = Array(3).fill('<div class="skeleton h-32 rounded-2xl"></div>').join(''); return; }
+      if (isLoading()) {
+        $('categoriesSummary').textContent = '';
+        grid.innerHTML = Array(3).fill('<div class="skeleton h-32 rounded-2xl"></div>').join('');
+        return;
+      }
 
       const { cur } = getPeriodRanges('this_month');
       const monthTx = appState.transactions.filter(t => inRange(t, cur));
+      const isIncome = categoryTab === 'income';
 
-      grid.innerHTML = appState.categories.length
-        ? appState.categories.map(c => {
-            const color = safeColor(c.color);
-            const cid = getId(c);
-            const nm = escapeHtml(getName(c));
-            const isIncome = getType(c) === 'income';
-            const spent = monthTx
-              .filter(t => getType(t) === (isIncome ? 'income' : 'expense') && String(getCatId(t)) === String(cid))
-              .reduce((s, t) => s + getAmount(t), 0);
-            const budget = Number(c.budget || 0);
-            const hasBudget = !isIncome && budget > 0;   /* anggaran hanya untuk pengeluaran */
-            const pct = hasBudget ? Math.min(100, Math.round((spent / budget) * 100)) : 0;
-            const isOver = hasBudget && spent > budget;
+      /* Jenis yang tidak dikenal dianggap pengeluaran agar tidak hilang */
+      const byType = inc => appState.categories.filter(c => (getType(c) === 'income') === inc);
 
-            return `<div class="panel p-5">
-              <div class="flex items-start justify-between">
-                <div class="flex h-10 w-10 items-center justify-center rounded-xl" style="background:${color}26;color:${color}"><i data-lucide="${safeIcon(c.icon)}" aria-hidden="true"></i></div>
-                <div class="flex gap-2">
-                  <button type="button" class="icon-btn border border-line hover:border-accent" data-edit-category="${escapeHtml(cid)}" title="Edit" aria-label="Edit kategori ${nm}"><i data-lucide="pencil" class="h-4 w-4" aria-hidden="true"></i></button>
-                  <button type="button" class="icon-btn border border-line hover:border-red-500" data-delete-category="${escapeHtml(cid)}" title="Hapus" aria-label="Hapus kategori ${nm}"><i data-lucide="trash-2" class="h-4 w-4" aria-hidden="true"></i></button>
-                </div>
-              </div>
-              <div class="mt-4 font-semibold text-white text-base">${nm}</div>
-              <div class="mt-1 text-xs text-muted">${isIncome ? 'Pemasukan' : 'Pengeluaran'} bulan ini: <span class="${isIncome ? 'positive font-semibold' : ''}">${formatMoney(spent)}</span></div>
+      $('catCountExpense').textContent = byType(false).length;
+      $('catCountIncome').textContent = byType(true).length;
+      document.querySelectorAll('[data-cat-tab]').forEach(b => {
+        const on = b.dataset.catTab === categoryTab;
+        b.classList.toggle('active', on);
+        b.setAttribute('aria-selected', String(on));
+      });
 
-              ${hasBudget ? `
-                <div class="mt-4">
-                  <div class="flex justify-between text-xs mb-1.5">
-                    <span class="${isOver ? 'negative font-semibold' : 'text-muted'}">Anggaran: ${formatMoney(budget)}</span>
-                    <span class="${isOver ? 'negative font-semibold' : 'text-muted'}">${pct}%</span>
-                  </div>
-                  <div class="w-full bg-[#18181a] h-2 rounded-full overflow-hidden border border-line" role="progressbar" aria-valuenow="${pct}" aria-valuemin="0" aria-valuemax="100" aria-label="Pemakaian anggaran ${nm}">
-                    <div class="h-full rounded-full ${isOver ? 'bg-accent' : 'bg-emerald-500'}" style="width: ${pct}%"></div>
-                  </div>
-                </div>
-              ` : ''}
-            </div>`;
-          }).join('')
+      const total = sumOf(monthTx, categoryTab);
+      $('categoriesSummary').innerHTML =
+        `${isIncome ? 'Total pemasukan' : 'Total pengeluaran'} bulan ini: ` +
+        `<span class="font-semibold ${isIncome ? 'positive' : 'negative'}">${formatMoney(total)}</span>`;
+
+      const list = byType(isIncome);
+      grid.innerHTML = list.length
+        ? list.map(c => categoryCardHtml(c, monthTx, isIncome)).join('')
         : `<div class="panel col-span-full p-10 text-center">
             <i data-lucide="tags" class="mx-auto mb-3 h-8 w-8 text-muted" aria-hidden="true"></i>
-            <div class="font-semibold">Belum Ada Kategori</div>
-            <button class="btn-primary mt-4" data-action="add-category">+ Tambah Kategori Pertama</button>
+            <div class="font-semibold">Belum ada kategori ${isIncome ? 'pemasukan' : 'pengeluaran'}</div>
+            <button class="btn-primary mt-4" data-action="add-category" data-cat-type="${categoryTab}">+ Tambah Kategori</button>
           </div>`;
     }
 
@@ -3246,6 +3316,7 @@
       if (id) appState.categories = appState.categories.map(c => String(getId(c)) === String(id) ? record : c);
       else appState.categories.unshift(record);
 
+      categoryTab = type;   /* kategori yang baru disimpan langsung terlihat */
       closeModal('categoryModal');
       renderAll();
       toast(id ? 'Kategori diperbarui.' : 'Kategori ditambahkan.', 'success');
@@ -3356,9 +3427,7 @@
     $('addTransactionBtn').addEventListener('click', () => openTransactionForm());
     $('addTransactionBtn2').addEventListener('click', () => openTransactionForm());
     $('fab').addEventListener('click', () => openTransactionForm());
-    $('addCategoryBtn').addEventListener('click', () => openCategoryForm());
-    $('addAccountBtn').addEventListener('click', () => openAccountForm());
-
+    $('addCategoryBtn').addEventListener('click', () => { openCategoryForm(); setCategoryType(categoryTab); });    $('addAccountBtn').addEventListener('click', () => openAccountForm());
     $('transactionForm').addEventListener('submit', handleTransactionSubmit);
     $('categoryForm').addEventListener('submit', handleCategorySubmit);
     $('accountForm').addEventListener('submit', handleAccountSubmit);
@@ -3432,6 +3501,7 @@
       if (!target) return;
       const d = target.dataset;
 
+      if (d.catTab) { categoryTab = d.catTab; renderCategories(); refreshIcons(); }
       if (d.categoryType) setCategoryType(d.categoryType);
       if (d.catIcon) setCategoryIcon(d.catIcon);
       if (d.budgetAdd) $('categoryBudget').value = formatNumber(parseAmount($('categoryBudget').value) + Number(d.budgetAdd));
@@ -3464,7 +3534,7 @@
       }
       if (d.quickDate !== undefined) $('txDate').value = dayOffset(Number(d.quickDate));
       if (d.color) setCategoryColor(d.color);
-      if (d.action === 'add-category') openCategoryForm();
+      if (d.action === 'add-category') { openCategoryForm(); setCategoryType(d.catType || categoryTab); }
       if (d.action === 'add-account') openAccountForm();
     });
 
