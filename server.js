@@ -11,11 +11,11 @@ const SPREADSHEET_ID = process.env.GOOGLE_SHEET_ID;
 const HEADERS = {
   Transactions: ['id','date','type','category','description','amount','account','paymentMethod','notes','createdAt','updatedAt','fromAccount','toAccount','billId','loanId'],
   Categories: ['id','name','type','color','icon','budget','createdAt'],
-  Accounts: ['id','name','type','initialBalance','createdAt'],
+  Accounts: ['id','name','type','initialBalance','createdAt','loanId'],
   Settings: ['key','value'],
   Templates: ['id','title','type','categoryId','accountId','amount','createdAt','fromAccountId','toAccountId'],
   Bills: ['id','name','category','amount','issueDate','dueDate','status','paidAmount','notes','createdAt','updatedAt','loanId','paymentAccount','paymentTransactionId','transactionIds','paidAt'],
-  Loans: ['id','lender','amount','date','account','dueDate','notes','status','paidAmount','createdAt','updatedAt','incomeTransactionId','category','billId'],
+  Loans: ['id','lender','amount','date','account','dueDate','notes','status','paidAmount','createdAt','updatedAt','incomeTransactionId','category','billId','purpose','fundAccountId'],
   ProcessedRequests: ['requestId','method','resultJson','createdAt']
 };
 const MAX_PROCESSED_REQUESTS = 1000;
@@ -206,16 +206,30 @@ async function nameTaken(sheetName, name, exceptId) {
 async function columnContains(sheetName, columnName, value) {
   return (await readRows(sheetName)).some(r => String(r[columnName] ?? '') === String(value));
 }
-async function updateReferences(columnName, oldValue, newValue) {
-  const { headers, rows } = await rawRows('Transactions');
+/* Ganti nilai satu kolom di sheet mana pun (dipakai saat nama akun berubah). */
+async function updateSheetReferences(sheetName, columnName, oldValue, newValue) {
+  const { headers, rows } = await rawRows(sheetName);
   const col = headers.indexOf(columnName);
   if (col < 0) return;
   const updates = [];
-  rows.forEach((row, i) => { if (String(row[col] ?? '') === String(oldValue)) updates.push({ range: `Transactions!${colLetter(col+1)}${i+2}`, values: [[newValue]] }); });
+  rows.forEach((row, i) => { if (String(row[col] ?? '') === String(oldValue)) updates.push({ range: `${sheetName}!${colLetter(col+1)}${i+2}`, values: [[newValue]] }); });
   if (updates.length) {
     await sheetsApi.spreadsheets.values.batchUpdate({ spreadsheetId: SPREADSHEET_ID, requestBody: { valueInputOption: 'RAW', data: updates } });
-    invalidateSheetCache('Transactions');
+    invalidateSheetCache(sheetName);
   }
+}
+async function updateReferences(columnName, oldValue, newValue) {
+  await updateSheetReferences('Transactions', columnName, oldValue, newValue);
+}
+/* Nama akun tidak boleh bentrok dengan akun lain. */
+async function uniqueAccountName(desired) {
+  const base = clean(desired).slice(0, 60) || 'Pinjaman';
+  let candidate = base;
+  for (let i = 2; i < 100; i++) {
+    if (!(await nameTaken('Accounts', candidate, null))) return candidate;
+    candidate = `${base} ${i}`.slice(0, 60);
+  }
+  return `${base} ${Date.now()}`.slice(0, 60);
 }
 function validateDate(value) {
   const s = clean(value);
@@ -274,7 +288,8 @@ async function getAppData() {
     return { ...account, initialBalance, openingBalance: initialBalance, currentBalance: initialBalance + net };
   });
   const bills = billsRaw.map(b => mapBill(b, catByName));
-  const loans = loansRaw.map(l => mapLoan(l, accByName));
+  const accById = Object.fromEntries(accountsRaw.map(a => [String(a.id), a]));
+  const loans = loansRaw.map(l => mapLoan(l, accByName, accById));
   return { success: true, categories, accounts, transactions, templates: templatesRaw.map(t=>({...t,amount:num(t.amount)})), bills, loans, settings, spreadsheetUrl: `https://docs.google.com/spreadsheets/d/${SPREADSHEET_ID}/edit` };
 }
 async function buildTransaction(data) {
@@ -292,6 +307,7 @@ async function buildTransaction(data) {
     const to = await findByIdOrName('Accounts', data.toAccountId || data.toAccount);
     if (!from || !to) throw new Error('Akun asal dan akun tujuan wajib dipilih.');
     if (String(from.id)===String(to.id) || String(from.name)===String(to.name)) throw new Error('Akun asal dan akun tujuan tidak boleh sama.');
+    if (type === 'transfer') await assertLoanFundAvailable(from, amount, data.id);
     fromAccount=String(from.name); toAccount=String(to.name); account=fromAccount; category='Transfer';
   } else {
     const cat = await findByIdOrName('Categories', data.categoryId || data.category);
@@ -300,6 +316,8 @@ async function buildTransaction(data) {
     const acc = await findByIdOrName('Accounts', data.accountId || data.account);
     if (!acc) throw new Error('Akun tidak ditemukan. Muat ulang data lalu coba lagi.');
     category=String(cat.name); account=String(acc.name);
+    /* Dana pinjaman tidak boleh terpakai melebihi saldo yang tersedia. */
+    if (type === 'expense') await assertLoanFundAvailable(acc, amount, data.id);
   }
   return { date: validateDate(data.date), type, category, description: cellText(description), amount, account, paymentMethod: cellText(data.paymentMethod || '-'), notes: cellText(data.notes || ''), fromAccount, toAccount };
 }
@@ -345,18 +363,60 @@ async function updateCategory(d={}) {
 }
 async function deleteCategory(d={}) { const id=clean(d.id);if(!id)throw new Error('ID kategori tidak valid.');return idempotent('deleteCategory',d,async()=>{const f=await findRow('Categories',id);if(!f)return{success:true,message:'Kategori sudah tidak ada',id};if(await columnContains('Transactions','category',f.object.name))throw new Error(`Kategori "${f.object.name}" masih digunakan transaksi.`);await deleteRow('Categories',f.rowNumber);return{success:true,message:'Kategori berhasil dihapus',id};}); }
 function validateAccount(d={}) { const name=clean(d.name),type=clean(d.type);if(!name||!type)throw new Error('Nama dan jenis akun wajib diisi.');const raw=d.initialBalance!==undefined?d.initialBalance:d.openingBalance;const initialBalance=Number(raw===undefined||raw===''?0:raw);if(!Number.isFinite(initialBalance))throw new Error('Saldo awal harus berupa angka.');return{name,type,initialBalance}; }
-async function createAccount(d={}) { const v=validateAccount(d);return idempotent('createAccount',d,async()=>{if(await nameTaken('Accounts',v.name,null))throw new Error(`Akun "${v.name}" sudah ada.`);const id=newId('ACC');await appendRows('Accounts',[[id,cellText(v.name),v.type,v.initialBalance,now()]]);return{success:true,message:'Akun berhasil dibuat',id};}); }
-async function updateAccount(d={}) { const id=clean(d.id);if(!id)throw new Error('ID akun tidak valid.');const v=validateAccount(d);return idempotent('updateAccount',d,async()=>{const f=await findRow('Accounts',id);if(!f)throw new Error('Akun tidak ditemukan.');if(await nameTaken('Accounts',v.name,id))throw new Error(`Akun "${v.name}" sudah ada.`);const old=String(f.object.name);await writeObjectRow('Accounts',f.rowNumber,{...f.object,name:cellText(v.name),type:v.type,initialBalance:v.initialBalance});if(old!==v.name){for(const c of ['account','fromAccount','toAccount'])await updateReferences(c,old,v.name);}return{success:true,message:'Akun berhasil diperbarui',id};}); }
-async function deleteAccount(d={}) { const id=clean(d.id);if(!id)throw new Error('ID akun tidak valid.');return idempotent('deleteAccount',d,async()=>{const f=await findRow('Accounts',id);if(!f)return{success:true,message:'Akun sudah tidak ada',id};for(const c of ['account','fromAccount','toAccount'])if(await columnContains('Transactions',c,f.object.name))throw new Error(`Akun "${f.object.name}" masih digunakan transaksi.`);await deleteRow('Accounts',f.rowNumber);return{success:true,message:'Akun berhasil dihapus',id};}); }
+async function createAccount(d={}) { const v=validateAccount(d);return idempotent('createAccount',d,async()=>{if(v.type==='loan')throw new Error('Akun sumber dana pinjaman hanya dibuat otomatis saat mencatat pinjaman.');if(await nameTaken('Accounts',v.name,null))throw new Error(`Akun "${v.name}" sudah ada.`);const id=newId('ACC');await appendRows('Accounts',[[id,cellText(v.name),v.type,v.initialBalance,now(),'']]);return{success:true,message:'Akun berhasil dibuat',id};}); }async function updateAccount(d = {}) { const id=clean(d.id);if(!id)throw new Error('ID akun tidak valid.');const v=validateAccount(d);return idempotent('updateAccount',d,async()=>{const f=await findRow('Accounts',id);if(!f)throw new Error('Akun tidak ditemukan.');
+  /* Akun sumber dana pinjaman dijaga: jenis dan saldonya mengikuti pinjaman. */
+  const loanId=clean(f.object.loanId);
+  if(loanId){
+    if(v.type!=='loan')throw new Error('Jenis akun sumber dana pinjaman tidak dapat diubah.');
+    if(v.initialBalance!==num(f.object.initialBalance))throw new Error('Saldo akun sumber dana pinjaman dihitung otomatis dari transaksi dan tidak dapat diubah manual.');
+  }
+  if(await nameTaken('Accounts',v.name,id))throw new Error(`Akun "${v.name}" sudah ada.`);const old=String(f.object.name);await writeObjectRow('Accounts',f.rowNumber,{...f.object,name:cellText(v.name),type:v.type,initialBalance:v.initialBalance});if(old!==v.name){for(const c of ['account','fromAccount','toAccount'])await updateReferences(c,old,v.name);await updateSheetReferences('Loans','account',old,v.name);await updateSheetReferences('Bills','paymentAccount',old,v.name);}return{success:true,message:'Akun berhasil diperbarui',id};}); }
+async function deleteAccount(d={}) { const id=clean(d.id);if(!id)throw new Error('ID akun tidak valid.');return idempotent('deleteAccount',d,async()=>{const f=await findRow('Accounts',id);if(!f)return{success:true,message:'Akun sudah tidak ada',id};if(clean(f.object.loanId))throw new Error('Akun sumber dana pinjaman tidak dapat dihapus. Hapus pinjamannya melalui menu Pinjaman.');for(const c of ['account','fromAccount','toAccount'])if(await columnContains('Transactions',c,f.object.name))throw new Error(`Akun "${f.object.name}" masih digunakan transaksi.`);await deleteRow('Accounts',f.rowNumber);return{success:true,message:'Akun berhasil dihapus',id};}); }
 async function createTemplate(d={}) { const title=clean(d.title),amount=Number(d.amount===undefined||d.amount===''?0:d.amount);if(!title)throw new Error('Nama template wajib diisi.');if(title.length>120)throw new Error('Nama template maksimal 120 karakter.');if(!validType(d.type))throw new Error('Jenis template tidak valid.');if(!Number.isFinite(amount)||amount<0)throw new Error('Nominal template tidak valid.');return idempotent('createTemplate',d,async()=>{const rows=await readRows('Templates');if(rows.length>=MAX_TEMPLATES)throw new Error(`Jumlah template maksimal ${MAX_TEMPLATES}.`);if(rows.some(r=>String(r.title).toLowerCase()===title.toLowerCase()))throw new Error(`Template "${title}" sudah ada.`);const id=newId('TPL');await appendRows('Templates',[[id,cellText(title),d.type,clean(d.categoryId),clean(d.accountId),amount,now(),clean(d.fromAccountId),clean(d.toAccountId)]]);return{success:true,message:'Template berhasil disimpan',id};}); }
 async function deleteTemplate(d={}) { const id=clean(d.id);if(!id)throw new Error('ID template tidak valid.');return idempotent('deleteTemplate',d,async()=>{const f=await findRow('Templates',id);if(f)await deleteRow('Templates',f.rowNumber);return{success:true,message:f?'Template berhasil dihapus':'Template sudah tidak ada',id};}); }
 
 /* ========================================================================
  * TAGIHAN & PINJAMAN
  * Satu tagihan = satu kewajiban. Satu pinjaman selalu menghasilkan:
- *   1 transaksi pemasukan (dana diterima) + 1 tagihan pembayaran (relasi loanId).
+ *   1 akun sumber dana (tipe 'loan') + 1 transaksi pemasukan (dana diterima)
+ *   + 1 tagihan pembayaran (relasi loanId).
  * Pembayaran tagihan selalu menghasilkan 1 transaksi pengeluaran (relasi billId).
  * ===================================================================== */
+
+/* Akun sumber dana pinjaman: tipe 'loan' atau terikat pada satu pinjaman. */
+function isLoanFundAccount(account) {
+  return Boolean(account) && (String(account.type || '').toLowerCase() === 'loan' || Boolean(clean(account.loanId)));
+}
+
+/* Saldo dana pinjaman selalu diturunkan dari transaksi, bukan angka statis.
+   excludeTxId dipakai saat transaksi sedang diedit agar tidak dihitung dua kali. */
+async function loanFundBalance(account, excludeTxId) {
+  const rows = await readRows('Transactions');
+  const name = String(account.name);
+  let net = 0;
+  for (const tx of rows) {
+    if (excludeTxId && String(tx.id || '') === String(excludeTxId)) continue;
+    const amount = num(tx.amount);
+    const type = String(tx.type || '').toLowerCase();
+    if (type === 'income' && String(tx.account) === name) net += amount;
+    else if (type === 'expense' && String(tx.account) === name) net -= amount;
+    else if (type === 'transfer') {
+      if (String(tx.fromAccount) === name) net -= amount;
+      if (String(tx.toAccount) === name) net += amount;
+    }
+  }
+  return num(account.initialBalance) + net;
+}
+
+/* Pengeluaran/transfer tidak boleh menghabiskan dana pinjaman melebihi saldo tersedia. */
+async function assertLoanFundAvailable(account, amount, excludeTxId) {
+  if (!isLoanFundAccount(account)) return;
+  const balance = await loanFundBalance(account, excludeTxId);
+  if (Number(amount) > balance) {
+    const short = Math.max(0, Math.floor(balance));
+    throw new Error(`Nominal melebihi saldo dana pinjaman pada akun "${account.name}" (${short}).`);
+  }
+}
 
 /* Cari kategori berdasarkan id/nama; buat kategori bawaan bila belum ada. */
 async function resolveCategory(ref, type, fallbackName) {
@@ -406,17 +466,20 @@ function mapBill(row, catByName) {
   };
 }
 
-function mapLoan(row, accByName) {
+function mapLoan(row, accByName, accById) {
   const total = num(row.amount), paid = num(row.paidAmount);
   const status = total > 0 && paid >= total ? 'paid' : paid > 0 ? 'partial' : 'unpaid';
   const acc = accByName ? accByName[String(row.account)] : null;
+  const fund = accById ? accById[String(row.fundAccountId || '')] : null;
   return {
     ...row,
     amount: total,
     paidAmount: paid,
     remaining: Math.max(0, total - paid),
     status,
-    accountId: acc ? acc.id : ''
+    accountId: acc ? acc.id : (fund ? fund.id : ''),
+    fundAccountId: fund ? fund.id : clean(row.fundAccountId),
+    fundAccountName: fund ? fund.name : ''
   };
 }
 
@@ -570,6 +633,18 @@ async function payBill(d = {}) {
     if (amount > remaining) throw new Error(`Nominal pembayaran melebihi sisa tagihan (${remaining}).`);
     const acc = await findByIdOrName('Accounts', d.accountId || d.account);
     if (!acc) throw new Error('Akun pembayaran tidak ditemukan.');
+    /* Pembayaran pinjaman tidak boleh mengurangi saldo akun sumber dana pinjaman itu sendiri. */
+    if (clean(bill.loanId)) {
+      const loanRow = await findRow('Loans', clean(bill.loanId));
+      if (loanRow) {
+        const fundId = clean(loanRow.object.fundAccountId);
+        const fundName = clean(loanRow.object.account);
+        if ((fundId && String(acc.id) === fundId) || (fundName && String(acc.name) === fundName)) {
+          throw new Error('Pembayaran pinjaman tidak boleh menggunakan akun sumber dana pinjaman itu sendiri. Pilih rekening bank, e-wallet, atau tunai lain.');
+        }
+      }
+    }
+    await assertLoanFundAvailable(acc, amount);
     const cat = await resolveCategory(bill.category, 'expense', clean(bill.category) || 'Tagihan & Utilitas');
     const date = d.date ? validateDate(d.date) : localToday();
     const stamp = now();
@@ -626,6 +701,8 @@ function validateLoan(d = {}) {
   const lender = clean(d.lender || d.name);
   if (!lender) throw new Error('Nama pemberi pinjaman wajib diisi.');
   if (lender.length > 100) throw new Error('Nama pemberi pinjaman maksimal 100 karakter.');
+  const purpose = clean(d.purpose || d.loanPurpose);
+  if (purpose.length > 120) throw new Error('Nama/tujuan pinjaman maksimal 120 karakter.');
   const amount = Number(d.amount);
   if (!Number.isFinite(amount) || amount <= 0) throw new Error('Nominal pinjaman harus berupa angka positif.');
   if (!d.date) throw new Error('Tanggal pinjaman wajib diisi.');
@@ -634,44 +711,46 @@ function validateLoan(d = {}) {
   const dueDate = validateDate(d.dueDate);
   if (dueDate < date) throw new Error('Jatuh tempo tidak boleh sebelum tanggal pinjaman.');
   if (String(d.notes || '').length > 1000) throw new Error('Catatan terlalu panjang.');
-  return { lender, amount, date, dueDate, notes: clean(d.notes) };
+  return { lender, purpose, amount, date, dueDate, notes: clean(d.notes) };
 }
 
 async function createLoan(d = {}) {
   return idempotent('createLoan', d, async () => {
     const v = validateLoan(d);
-    const acc = await findByIdOrName('Accounts', d.accountId || d.account);
-    if (!acc) throw new Error('Akun penerima dana tidak ditemukan.');
     const incomeCat = await resolveCategory(d.category || d.categoryId, 'income', 'Pinjaman');
     const payCat = await resolveCategory('', 'expense', 'Cicilan & Pinjaman');
     const loanId = newId('LOAN');
     const billId = newId('BILL');
     const txId = newId('TXN');
+    const accId = newId('ACC');
     const stamp = now();
     const label = v.lender.length > 90 ? `${v.lender.slice(0, 90)}…` : v.lender;
-    await appendTransactionRecord({
-      id: txId,
-      date: v.date,
-      type: 'income',
-      category: String(incomeCat.name),
-      description: `Pinjaman dari ${label}`.slice(0, 150),
-      amount: v.amount,
-      account: String(acc.name),
-      paymentMethod: '-',
-      notes: v.notes,
-      createdAt: stamp,
-      updatedAt: stamp,
-      billId: '',
-      loanId
-    });
+    /* Satu akun sumber dana per pinjaman; dana diterima sebagai saldo awal lewat transaksi pemasukan. */
+    const accName = await uniqueAccountName(v.purpose ? `Pinjaman: ${v.purpose}` : `Pinjaman dari ${v.lender}`);
     try {
-      await appendRows('Loans', [[loanId, cellText(v.lender), v.amount, v.date, String(acc.name), v.dueDate, cellText(v.notes), 'unpaid', 0, stamp, stamp, txId, String(incomeCat.name), billId]]);
+      await appendRows('Accounts', [[accId, cellText(accName), 'loan', 0, stamp, loanId]]);
+      await appendTransactionRecord({
+        id: txId,
+        date: v.date,
+        type: 'income',
+        category: String(incomeCat.name),
+        description: `Pinjaman dari ${label}`.slice(0, 150),
+        amount: v.amount,
+        account: accName,
+        paymentMethod: '-',
+        notes: v.notes,
+        createdAt: stamp,
+        updatedAt: stamp,
+        billId: '',
+        loanId
+      });
+      await appendRows('Loans', [[loanId, cellText(v.lender), v.amount, v.date, cellText(accName), v.dueDate, cellText(v.notes), 'unpaid', 0, stamp, stamp, txId, String(incomeCat.name), billId, cellText(v.purpose), accId]]);
       await appendRows('Bills', [[billId, cellText(`Pembayaran pinjaman ${label}`.slice(0, 120)), String(payCat.name), v.amount, v.date, v.dueDate, 'unpaid', 0, cellText(`Tagihan otomatis untuk pinjaman dari ${label}`.slice(0, 1000)), stamp, stamp, loanId, '', '', '', '']]);
     } catch (error) {
-      await rollbackCreated([['Bills', billId], ['Loans', loanId], ['Transactions', txId]]);
+      await rollbackCreated([['Bills', billId], ['Loans', loanId], ['Transactions', txId], ['Accounts', accId]]);
       throw error;
     }
-    return { success: true, message: 'Pinjaman berhasil dicatat', id: loanId, billId, transactionId: txId };
+    return { success: true, message: 'Pinjaman berhasil dicatat', id: loanId, billId, transactionId: txId, accountId: accId };
   });
 }
 
@@ -688,17 +767,19 @@ async function updateLoan(d = {}) {
     const billRow = billId ? await findRow('Bills', billId) : null;
     if (paid > 0) {
       if (v.amount !== num(loan.amount) || v.date !== clean(loan.date).slice(0, 10)) throw new Error('Pinjaman yang sudah memiliki pembayaran hanya dapat diubah nama, jatuh tempo, dan catatannya.');
-      await writeObjectRow('Loans', found.rowNumber, { ...loan, lender: cellText(v.lender), dueDate: v.dueDate, notes: cellText(v.notes), updatedAt: now() });
+      await writeObjectRow('Loans', found.rowNumber, { ...loan, lender: cellText(v.lender), purpose: cellText(v.purpose), dueDate: v.dueDate, notes: cellText(v.notes), updatedAt: now() });
       if (billRow) await writeObjectRow('Bills', billRow.rowNumber, { ...billRow.object, dueDate: v.dueDate, updatedAt: now() });
       return { success: true, message: 'Pinjaman berhasil diperbarui', id };
     }
-    const acc = await findByIdOrName('Accounts', d.accountId || d.account);
-    if (!acc) throw new Error('Akun penerima dana tidak ditemukan.');
+    /* Pinjaman baru selalu berakun pada akun sumber dananya sendiri; akun penerima tidak dapat dipindah. */
+    const fundAccId = clean(loan.fundAccountId);
+    const acc = fundAccId ? await findByIdOrName('Accounts', fundAccId) : await findByIdOrName('Accounts', d.accountId || d.account);
+    if (!acc) throw new Error(fundAccId ? 'Akun sumber dana pinjaman tidak ditemukan.' : 'Akun penerima dana tidak ditemukan.');
     const txId = clean(loan.incomeTransactionId);
     const txRow = txId ? await findRow('Transactions', txId) : null;
     const stamp = now();
     try {
-      await writeObjectRow('Loans', found.rowNumber, { ...loan, lender: cellText(v.lender), amount: v.amount, date: v.date, account: String(acc.name), dueDate: v.dueDate, notes: cellText(v.notes), updatedAt: stamp });
+      await writeObjectRow('Loans', found.rowNumber, { ...loan, lender: cellText(v.lender), purpose: cellText(v.purpose), amount: v.amount, date: v.date, account: String(acc.name), dueDate: v.dueDate, notes: cellText(v.notes), updatedAt: stamp });
       if (txRow) await writeObjectRow('Transactions', txRow.rowNumber, { ...txRow.object, date: v.date, amount: v.amount, account: String(acc.name), description: cellText(`Pinjaman dari ${v.lender}`.slice(0, 150)), notes: cellText(v.notes), updatedAt: stamp });
       if (billRow) await writeObjectRow('Bills', billRow.rowNumber, { ...billRow.object, name: cellText(`Pembayaran pinjaman ${v.lender}`.slice(0, 120)), amount: v.amount, issueDate: v.date, dueDate: v.dueDate, updatedAt: stamp });
     } catch (error) {
@@ -723,13 +804,30 @@ async function deleteLoan(d = {}) {
     if (paid > 0 && paid < total) throw new Error('Pinjaman dengan pembayaran sebagian tidak dapat dihapus.');
     const billId = clean(loan.billId);
     const incomeTxId = clean(loan.incomeTransactionId);
+    /* Akun sumber dana hanya boleh hilang bersama pinjaman jika belum pernah dipakai. */
+    const fundAccId = clean(loan.fundAccountId);
+    const fundAccRow = fundAccId ? await findRow('Accounts', fundAccId) : null;
+    if (fundAccRow) {
+      const usage = (await readRows('Transactions')).filter(t =>
+        String(t.account || '') === String(fundAccRow.object.name) && String(t.id || '') !== incomeTxId);
+      if (usage.length) {
+        throw new Error(`Pinjaman ini sudah dipakai untuk ${usage.length} transaksi penggunaan dana. Hapus atau pindahkan transaksi tersebut terlebih dahulu agar saldo akun tidak rusak.`);
+      }
+    }
     if (billId) {
       const billRow = await findRow('Bills', billId);
       if (billRow) await deleteRow('Bills', billRow.rowNumber);
     }
-    if (paid <= 0 && incomeTxId) {
-      const txRow = await findRow('Transactions', incomeTxId);
-      if (txRow) await deleteRow('Transactions', txRow.rowNumber);
+    if (paid <= 0) {
+      /* Pinjaman belum dibayar: pemasukan dan akun sumber dananya ikut dibatalkan. */
+      if (incomeTxId) {
+        const txRow = await findRow('Transactions', incomeTxId);
+        if (txRow) await deleteRow('Transactions', txRow.rowNumber);
+      }
+      if (fundAccRow) await deleteRow('Accounts', fundAccRow.rowNumber);
+    } else if (fundAccRow) {
+      /* Lunas: pemasukan tetap sebagai riwayat, akun dipertahankan namun dilepas dari pinjaman. */
+      await writeObjectRow('Accounts', fundAccRow.rowNumber, { ...fundAccRow.object, loanId: '' });
     }
     await updateReferences('loanId', id, '');
     if (billId) await updateReferences('billId', billId, '');
