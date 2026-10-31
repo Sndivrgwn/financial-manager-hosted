@@ -1248,6 +1248,21 @@
     transform: translateX(calc(100% + 4px));
     background: #22c55e;
   }
+
+    /* ---------- Tagihan & Pinjaman ---------- */
+    .bill-card.overdue { border-color: rgba(239, 68, 68, .45); }
+    .bill-card.due-soon { border-color: rgba(234, 179, 8, .45); }
+    .bill-card.is-paid { opacity: .85; }
+    .money-bar { height: 6px; overflow: hidden; border: 1px solid #39393d; border-radius: 999px; background: #18181a; }
+    .money-bar > span { display: block; height: 100%; border-radius: 999px; background: #ec643d; }
+    .loan-card .money-bar > span { background: #22c55e; }
+    .obligation-tile { border: 1px solid #39393d; border-radius: 12px; background: #1d1d20; padding: 10px 12px; }
+    .obligation-row { display: flex; align-items: center; gap: 10px; border-top: 1px solid #39393d; padding: 10px 0; }
+    .obligation-row:first-child { border-top: 0; }
+    /* Bottom nav memuat lebih banyak menu: boleh digeser di layar sempit */
+    #mobileNav { overflow-x: auto; scrollbar-width: none; }
+    #mobileNav::-webkit-scrollbar { display: none; }
+    #mobileNav .nav-item { flex: 0 0 auto; width: auto; min-width: 50px; padding-left: 2px; padding-right: 2px; font-size: 11px; }
   </style>
 </head>
 
@@ -1275,6 +1290,8 @@
         <nav class="space-y-1" aria-label="Navigasi utama">
           <button class="nav-item active" data-view="dashboard"><i data-lucide="layout-dashboard" class="h-4 w-4" aria-hidden="true"></i> Dashboard</button>
           <button class="nav-item" data-view="transactions"><i data-lucide="arrow-left-right" class="h-4 w-4" aria-hidden="true"></i> Transaksi</button>
+          <button class="nav-item" data-view="bills"><i data-lucide="receipt-text" class="h-4 w-4" aria-hidden="true"></i> Tagihan</button>
+          <button class="nav-item" data-view="loans"><i data-lucide="hand-coins" class="h-4 w-4" aria-hidden="true"></i> Pinjaman</button>
           <button class="nav-item" data-view="categories"><i data-lucide="tags" class="h-4 w-4" aria-hidden="true"></i> Kategori & Anggaran</button>
           <button class="nav-item" data-view="accounts"><i data-lucide="landmark" class="h-4 w-4" aria-hidden="true"></i> Akun Keuangan</button>
           <button class="nav-item" data-view="settings"><i data-lucide="settings" class="h-4 w-4" aria-hidden="true"></i> Pengaturan</button>
@@ -1394,6 +1411,22 @@
             </div>
             <div id="insightContent" class="flex-1"></div>
           </div>
+        </div>
+
+        <!-- Tagihan & Pinjaman ringkas -->
+        <div class="panel p-5">
+          <div class="mb-4 flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <h2 class="flex items-center gap-2 text-base font-semibold"><i data-lucide="calendar-clock" class="h-4 w-4 text-accent" aria-hidden="true"></i> Tagihan & Pinjaman</h2>
+              <p class="mt-0.5 text-xs text-muted">Kewajiban terdekat dan sisa pinjaman</p>
+            </div>
+            <div class="flex items-center gap-3">
+              <button type="button" class="text-sm font-semibold text-accent hover:underline min-h-[44px]" data-goto="bills">Tagihan</button>
+              <button type="button" class="text-sm font-semibold text-accent hover:underline min-h-[44px]" data-goto="loans">Pinjaman</button>
+            </div>
+          </div>
+          <div id="obligationStats" class="grid grid-cols-2 gap-3 xl:grid-cols-4"></div>
+          <div id="upcomingBills" class="mt-4"></div>
         </div>
 
         <div class="grid grid-cols-1 gap-6 xl:grid-cols-3">
@@ -1554,6 +1587,54 @@
         <div id="accountsGrid" class="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3"></div>
       </section>
 
+      <!-- Bills View -->
+      <section id="view-bills" class="hidden-view space-y-5" aria-label="Tagihan">
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h2 class="font-semibold">Daftar Tagihan</h2>
+            <p class="mt-1 text-sm text-muted">Pantau nominal, jatuh tempo, dan status pembayaran.</p>
+          </div>
+          <button id="addBillBtn" class="btn-primary">+ Tagihan</button>
+        </div>
+
+        <div id="billsSummary" class="grid grid-cols-2 gap-3 xl:grid-cols-4"></div>
+
+        <div class="panel grid grid-cols-1 gap-3 p-4 md:grid-cols-[1fr_1fr_auto]">
+          <select id="billFilterStatus" class="field" aria-label="Filter status tagihan">
+            <option value="">Semua status</option>
+            <option value="unpaid">Belum dibayar</option>
+            <option value="partial">Dibayar sebagian</option>
+            <option value="overdue">Terlambat</option>
+            <option value="paid">Sudah dibayar</option>
+          </select>
+          <select id="billFilterPeriod" class="field" aria-label="Filter periode jatuh tempo">
+            <option value="">Semua jatuh tempo</option>
+            <option value="this_month">Jatuh tempo bulan ini</option>
+            <option value="next7">7 hari ke depan</option>
+            <option value="next30">30 hari ke depan</option>
+            <option value="overdue">Sudah terlambat</option>
+          </select>
+          <button id="clearBillFilters" class="btn-secondary">Reset</button>
+        </div>
+
+        <div id="billsCount" class="text-sm text-muted" role="status">0 tagihan</div>
+        <div id="billsGrid" class="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3"></div>
+      </section>
+
+      <!-- Loans View -->
+      <section id="view-loans" class="hidden-view space-y-5" aria-label="Pinjaman">
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h2 class="font-semibold">Pinjaman</h2>
+            <p class="mt-1 text-sm text-muted">Dana yang diterima dan sisa yang harus dibayar.</p>
+          </div>
+          <button id="addLoanBtn" class="btn-primary">+ Pinjaman</button>
+        </div>
+
+        <div id="loansSummary" class="grid grid-cols-1 gap-3 sm:grid-cols-3"></div>
+        <div id="loansGrid" class="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3"></div>
+      </section>
+
       <!-- Settings View -->
       <section id="view-settings" class="hidden-view space-y-5" aria-label="Pengaturan">
         <div class="panel max-w-2xl p-6">
@@ -1592,6 +1673,8 @@
     aria-label="Navigasi bawah">
     <button class="nav-item flex-col gap-1 px-1 py-2 text-xs" data-view="dashboard"><i data-lucide="layout-dashboard" class="h-5 w-5" aria-hidden="true"></i>Home</button>
     <button class="nav-item flex-col gap-1 px-1 py-2 text-xs" data-view="transactions"><i data-lucide="arrow-left-right" class="h-5 w-5" aria-hidden="true"></i>Transaksi</button>
+    <button class="nav-item flex-col gap-1 px-1 py-2 text-xs" data-view="bills"><i data-lucide="receipt-text" class="h-5 w-5" aria-hidden="true"></i>Tagihan</button>
+    <button class="nav-item flex-col gap-1 px-1 py-2 text-xs" data-view="loans"><i data-lucide="hand-coins" class="h-5 w-5" aria-hidden="true"></i>Pinjaman</button>
     <button class="nav-item flex-col gap-1 px-1 py-2 text-xs" data-view="categories"><i data-lucide="tags" class="h-5 w-5" aria-hidden="true"></i>Kategori</button>
     <button class="nav-item flex-col gap-1 px-1 py-2 text-xs" data-view="accounts"><i data-lucide="landmark" class="h-5 w-5" aria-hidden="true"></i>Akun</button>
     <button class="nav-item flex-col gap-1 px-1 py-2 text-xs" data-view="settings"><i data-lucide="settings" class="h-5 w-5" aria-hidden="true"></i>Pengaturan</button>
@@ -1849,6 +1932,139 @@
   </div>
 
   <!-- Confirm Modal -->
+  <!-- Bill Modal -->
+  <div id="billModal" class="modal-backdrop hidden-view">
+    <div class="modal-card panel p-6">
+      <div class="mb-5 flex items-center justify-between border-b border-line pb-4">
+        <div>
+          <h2 id="billModalTitle" class="text-xl font-bold">Tambah Tagihan</h2>
+          <p class="mt-1 text-xs text-muted">Catat tagihan agar jatuh temponya tidak terlewat.</p>
+        </div>
+        <button type="button" data-close-modal="billModal" class="icon-btn" aria-label="Tutup"><i data-lucide="x" aria-hidden="true"></i></button>
+      </div>
+      <form id="billForm" class="space-y-5" novalidate>
+        <input id="billId" type="hidden">
+        <div>
+          <label class="mb-2 block text-sm text-muted" for="billName">Nama Tagihan</label>
+          <input id="billName" class="field" required maxlength="120" autocomplete="off" placeholder="Contoh: Listrik PLN">
+        </div>
+        <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <div>
+            <label class="mb-2 block text-sm text-muted" for="billCategory">Kategori</label>
+            <select id="billCategory" class="field"></select>
+          </div>
+          <div>
+            <label class="mb-2 block text-sm text-muted" for="billAmount">Nominal (Rp)</label>
+            <input id="billAmount" class="field text-lg font-bold" type="text" inputmode="numeric" autocomplete="off" placeholder="0">
+          </div>
+        </div>
+        <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <div>
+            <label class="mb-2 block text-sm text-muted" for="billIssueDate">Tanggal Tagihan</label>
+            <input id="billIssueDate" type="date" class="field">
+          </div>
+          <div>
+            <label class="mb-2 block text-sm text-muted" for="billDueDate">Jatuh Tempo</label>
+            <input id="billDueDate" type="date" class="field">
+          </div>
+        </div>
+        <div>
+          <label class="mb-2 block text-sm text-muted" for="billNotes">Catatan (opsional)</label>
+          <textarea id="billNotes" class="field" rows="2" maxlength="500" placeholder="Rincian tambahan..."></textarea>
+        </div>
+        <div id="billLoanNotice" class="hidden-view rounded-xl border border-blue-500/30 bg-blue-500/10 p-3 text-xs text-blue-300">
+          Tagihan ini dibuat otomatis dari pinjaman. Nominal dan kategori mengikuti data pinjaman.
+        </div>
+        <div class="flex justify-end gap-3 border-t border-line pt-4">
+          <button type="button" class="btn-secondary" data-close-modal="billModal">Batal</button>
+          <button class="btn-primary" type="submit">Simpan</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Pay Bill Modal -->
+  <div id="payBillModal" class="modal-backdrop hidden-view">
+    <div class="modal-card panel p-6">
+      <div class="mb-5 flex items-center justify-between border-b border-line pb-4">
+        <h2 id="payBillModalTitle" class="text-xl font-bold">Bayar Tagihan</h2>
+        <button type="button" data-close-modal="payBillModal" class="icon-btn" aria-label="Tutup"><i data-lucide="x" aria-hidden="true"></i></button>
+      </div>
+      <form id="payBillForm" class="space-y-5" novalidate>
+        <input id="payBillId" type="hidden">
+        <div id="payBillInfo" class="rounded-xl border border-line bg-ink p-3 text-sm"></div>
+        <div>
+          <label class="mb-2 block text-sm text-muted" for="payBillAmount">Nominal Pembayaran (Rp)</label>
+          <input id="payBillAmount" class="field text-lg font-bold" type="text" inputmode="numeric" autocomplete="off" placeholder="0">
+          <p id="payBillHint" class="mt-1.5 text-xs text-muted"></p>
+        </div>
+        <div>
+          <label class="mb-2 block text-sm text-muted" for="payBillAccount">Bayar dari Akun</label>
+          <select id="payBillAccount" class="field"></select>
+          <p class="mt-1.5 text-xs text-muted">Pembayaran otomatis tercatat sebagai transaksi pengeluaran.</p>
+        </div>
+        <div class="flex justify-end gap-3 border-t border-line pt-4">
+          <button type="button" class="btn-secondary" data-close-modal="payBillModal">Batal</button>
+          <button class="btn-primary" type="submit" id="payBillSubmit">Bayar</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Loan Modal -->
+  <div id="loanModal" class="modal-backdrop hidden-view">
+    <div class="modal-card panel p-6">
+      <div class="mb-5 flex items-center justify-between border-b border-line pb-4">
+        <div>
+          <h2 id="loanModalTitle" class="text-xl font-bold">Catat Pinjaman</h2>
+          <p class="mt-1 text-xs text-muted">Dana yang kamu terima dari pihak lain.</p>
+        </div>
+        <button type="button" data-close-modal="loanModal" class="icon-btn" aria-label="Tutup"><i data-lucide="x" aria-hidden="true"></i></button>
+      </div>
+      <form id="loanForm" class="space-y-5" novalidate>
+        <input id="loanId" type="hidden">
+        <div>
+          <label class="mb-2 block text-sm text-muted" for="loanName">Pemberi Pinjaman</label>
+          <input id="loanName" class="field" required maxlength="100" autocomplete="off" placeholder="Contoh: Budi, Koperasi, Bank">
+        </div>
+        <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <div>
+            <label class="mb-2 block text-sm text-muted" for="loanAmount">Nominal Pinjaman (Rp)</label>
+            <input id="loanAmount" class="field text-lg font-bold" type="text" inputmode="numeric" autocomplete="off" placeholder="0">
+          </div>
+          <div>
+            <label class="mb-2 block text-sm text-muted" for="loanDate">Tanggal Pinjaman</label>
+            <input id="loanDate" type="date" class="field">
+          </div>
+        </div>
+        <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <div>
+            <label class="mb-2 block text-sm text-muted" for="loanAccount">Akun Penerima Dana</label>
+            <select id="loanAccount" class="field"></select>
+          </div>
+          <div>
+            <label class="mb-2 block text-sm text-muted" for="loanDueDate">Jatuh Tempo Pembayaran</label>
+            <input id="loanDueDate" type="date" class="field">
+          </div>
+        </div>
+        <div>
+          <label class="mb-2 block text-sm text-muted" for="loanNotes">Catatan (opsional)</label>
+          <textarea id="loanNotes" class="field" rows="2" maxlength="500" placeholder="Kesepakatan, bunga, atau rincian lain..."></textarea>
+        </div>
+        <div id="loanCreateNotice" class="rounded-xl border border-accent/30 bg-accent/10 p-3 text-xs text-accent">
+          Saat disimpan, sistem otomatis membuat transaksi pemasukan dan tagihan pembayaran pinjaman.
+        </div>
+        <div id="loanEditHint" class="hidden-view rounded-xl border border-line bg-ink p-3 text-xs text-muted">
+          Pinjaman ini sudah memiliki pembayaran. Hanya nama, jatuh tempo, dan catatan yang dapat diubah.
+        </div>
+        <div class="flex justify-end gap-3 border-t border-line pt-4">
+          <button type="button" class="btn-secondary" data-close-modal="loanModal">Batal</button>
+          <button class="btn-primary" type="submit">Simpan</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
   <div id="confirmModal" class="modal-backdrop hidden-view" style="z-index:60">
     <div class="modal-card panel p-6" style="max-width:400px">
       <h2 id="confirmTitle" class="mb-2 text-lg font-bold">Konfirmasi Tindakan</h2>
@@ -1870,7 +2086,7 @@
      */
 
     const appState = {
-      transactions: [], categories: [], accounts: [], templates: [],
+      transactions: [], categories: [], accounts: [], templates: [], bills: [], loans: [],
       syncQueue: [], isSyncing: false,
       cashflowChart: null, categoryChart: null,
       initialized: false, loadFailed: false,
@@ -2126,7 +2342,7 @@
     }
 
     const normalizeArray = value => Array.isArray(value) ? value : [];
-    const listKey = entity => ({ transaction: 'transactions', category: 'categories', account: 'accounts', template: 'templates' }[entity]);
+    const listKey = entity => ({ transaction: 'transactions', category: 'categories', account: 'accounts', template: 'templates', bill: 'bills', loan: 'loans' }[entity]);
 
     async function loadServerData() {
       try {
@@ -2136,6 +2352,8 @@
           appState.categories = normalizeArray(result.categories);
           appState.accounts = normalizeArray(result.accounts);
           appState.templates = normalizeArray(result.templates);
+          appState.bills = normalizeArray(result.bills);
+          appState.loans = normalizeArray(result.loans);
         }
       } catch (err) {
         // Jangan gunakan kategori/akun demo dengan ID palsu (c1/a1) saat server gagal.
@@ -2266,8 +2484,13 @@
 
             appState.syncQueue.shift();
             persistQueue();
-            if (job.operation !== 'delete') markSynced(job.entity, finalId);
-            renderAll();
+            if (job.reload) {
+              /* Operasi multi-entitas (pinjaman/pembayaran): ambil ulang kondisi resmi server. */
+              try { await loadServerData(); } catch (_) { renderAll(); }
+            } else {
+              if (job.operation !== 'delete') markSynced(job.entity, finalId);
+              renderAll();
+            }
           } catch (error) {
             job.attempts = (job.attempts || 0) + 1;
             if (job.attempts >= MAX_ATTEMPTS) {
@@ -2294,6 +2517,8 @@
       transactions: ['AKTIVITAS', 'Transaksi', 'Kelola semua pemasukan, pengeluaran, dan transfer.'],
       categories: ['ORGANISASI', 'Kategori & Anggaran', 'Atur klasifikasi transaksi dan batas anggaran.'],
       accounts: ['REKENING', 'Akun Keuangan', 'Pantau rekening, e-wallet, dan saldo.'],
+      bills: ['KEWAJIBAN', 'Tagihan', 'Catat tagihan, pantau jatuh tempo, dan bayar tepat waktu.'],
+      loans: ['PINJAMAN', 'Pinjaman', 'Dana yang diterima dan sisa yang harus dibayar.'],
       settings: ['PENGATURAN', 'Pengaturan', 'Kelola status aplikasi dan antrean sinkronisasi.']
     };
 
@@ -2352,7 +2577,8 @@
 
     function formatDay(value) {
       if (!value) return '-';
-      const d = new Date(`${value}T00:00:00`);
+      /* Terima YYYY-MM-DD maupun timestamp ISO penuh. */
+      const d = new Date(`${String(value).slice(0, 10)}T00:00:00`);
       return Number.isNaN(d.getTime()) ? escapeHtml(value)
         : d.toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' });
     }
@@ -2439,6 +2665,8 @@
       renderTransactions();
       renderCategories();
       renderAccounts();
+      renderBills();
+      renderLoans();
       renderQuickTemplates();   
       updateSyncIndicator();
       refreshIcons();
@@ -2560,6 +2788,7 @@
         : `<div class="py-10 text-center text-sm text-muted">Belum ada transaksi.</div>`;
 
       renderCharts(current);
+      renderObligations();
     }
 
     function transactionRowRecent(t) {
@@ -3303,6 +3532,351 @@
         </div>`;
     }
 
+    /* ---------- Tagihan & Pinjaman ---------- */
+    const DUE_SOON_DAYS = 7;
+    const BILL_STATUS_META = {
+      unpaid: { label: 'Belum dibayar', cls: 'bg-[#303034] text-muted' },
+      partial: { label: 'Dibayar sebagian', cls: 'bg-blue-500/10 text-blue-400 border border-blue-500/20' },
+      overdue: { label: 'Terlambat', cls: 'bg-red-500/10 text-red-400 border border-red-500/20' },
+      paid: { label: 'Sudah dibayar', cls: 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' }
+    };
+    const LOAN_STATUS_META = {
+      unpaid: { label: 'Belum dibayar', cls: 'bg-[#303034] text-muted' },
+      partial: { label: 'Dibayar sebagian', cls: 'bg-blue-500/10 text-blue-400 border border-blue-500/20' },
+      paid: { label: 'Lunas', cls: 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' }
+    };
+
+    const billAmount = b => Number(b?.amount || 0);
+    const billPaid = b => Number(b?.paidAmount || 0);
+    const billRemaining = b => Math.max(0, billAmount(b) - billPaid(b));
+    const loanAmount = l => Number(l?.amount || 0);
+    const loanPaid = l => Number(l?.paidAmount || 0);
+    const loanRemaining = l => Math.max(0, loanAmount(l) - loanPaid(l));
+
+    const categoryByName = name => appState.categories.find(c => String(getName(c)).toLowerCase() === String(name || '').toLowerCase());
+    const findBill = id => appState.bills.find(b => String(getId(b)) === String(id));
+    const findLoan = id => appState.loans.find(l => String(getId(l)) === String(id));
+    const loanBillOf = l => appState.bills.find(b => String(b.loanId) === String(getId(l)));
+    const activeBills = () => appState.bills.filter(b => billStatus(b) !== 'paid');
+
+    function daysUntil(value) {
+      const s = String(value || '').slice(0, 10);
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return null;
+      const target = new Date(`${s}T00:00:00`);
+      if (Number.isNaN(target.getTime())) return null;
+      const base = new Date();
+      base.setHours(0, 0, 0, 0);
+      return Math.round((target - base) / 86400000);
+    }
+
+    function billStatus(b) {
+      const total = billAmount(b), paid = billPaid(b);
+      if (total > 0 && paid >= total) return 'paid';
+      const d = daysUntil(b.dueDate);
+      if (d !== null && d < 0) return 'overdue';
+      return paid > 0 ? 'partial' : 'unpaid';
+    }
+
+    function loanStatus(l) {
+      if (loanRemaining(l) <= 0) return 'paid';
+      return loanPaid(l) > 0 ? 'partial' : 'unpaid';
+    }
+
+    function billBadge(b) {
+      const m = BILL_STATUS_META[billStatus(b)] || BILL_STATUS_META.unpaid;
+      return `<span class="badge ${m.cls}">${m.label}</span>`;
+    }
+
+    function loanBadge(l) {
+      const m = LOAN_STATUS_META[loanStatus(l)] || LOAN_STATUS_META.unpaid;
+      return `<span class="badge ${m.cls}">${m.label}</span>`;
+    }
+
+    function dueText(b) {
+      if (billStatus(b) === 'paid') return `Jatuh tempo ${formatDay(b.dueDate)}`;
+      const d = daysUntil(b.dueDate);
+      if (d === null) return 'Tanpa jatuh tempo';
+      if (d < 0) return `Terlambat ${Math.abs(d)} hari`;
+      if (d === 0) return 'Jatuh tempo hari ini';
+      if (d === 1) return 'Jatuh tempo besok';
+      if (d <= DUE_SOON_DAYS) return `Jatuh tempo ${d} hari lagi`;
+      return `Jatuh tempo ${formatDay(b.dueDate)}`;
+    }
+
+    function billToneClass(b) {
+      const s = billStatus(b);
+      if (s === 'paid') return 'is-paid';
+      if (s === 'overdue') return 'overdue';
+      const d = daysUntil(b.dueDate);
+      return d !== null && d >= 0 && d <= DUE_SOON_DAYS ? 'due-soon' : '';
+    }
+
+    function getFilteredBills() {
+      const statusEl = $('billFilterStatus'), periodEl = $('billFilterPeriod');
+      const status = statusEl ? statusEl.value : '';
+      const period = periodEl ? periodEl.value : '';
+      const { cur } = getPeriodRanges('this_month');
+      return appState.bills.filter(b => {
+        const s = billStatus(b);
+        if (status === 'unpaid' && s === 'paid') return false;
+        if (status && status !== 'unpaid' && s !== status) return false;
+        if (period) {
+          const due = String(b.dueDate || '').slice(0, 10);
+          const d = daysUntil(b.dueDate);
+          if (period === 'this_month' && !(cur && due >= cur.start && due <= cur.end)) return false;
+          if (period === 'next7' && !(d !== null && d >= 0 && d <= 7)) return false;
+          if (period === 'next30' && !(d !== null && d >= 0 && d <= 30)) return false;
+          if (period === 'overdue' && !(d !== null && d < 0 && s !== 'paid')) return false;
+        }
+        return true;
+      }).sort((a, b) => {
+        const pa = billStatus(a) === 'paid' ? 1 : 0, pb = billStatus(b) === 'paid' ? 1 : 0;
+        if (pa !== pb) return pa - pb;
+        return String(a.dueDate || '').localeCompare(String(b.dueDate || ''));
+      });
+    }
+
+    function billCardHtml(b) {
+      const id = escapeHtml(getId(b));
+      const name = escapeHtml(getName(b));
+      const cat = categoryByName(b.category);
+      const color = cat ? safeColor(cat.color) : '#ec643d';
+      const icon = cat ? safeIcon(cat.icon) : 'receipt-text';
+      const total = billAmount(b), paid = billPaid(b), remaining = billRemaining(b);
+      const st = billStatus(b);
+      const isLoan = Boolean(String(b.loanId || '').trim());
+      const pct = total > 0 ? Math.min(100, Math.round((paid / total) * 100)) : 0;
+      const notes = String(b.notes || '').trim();
+      return `<div class="panel bill-card p-5 ${billToneClass(b)}">
+        <div class="flex items-start justify-between gap-3">
+          <div class="flex min-w-0 items-center gap-3">
+            <span class="tx-ico" style="background:${color}26;color:${color}"><i data-lucide="${icon}" class="h-5 w-5" aria-hidden="true"></i></span>
+            <div class="min-w-0">
+              <div class="truncate font-semibold text-white">${name}</div>
+              <div class="truncate text-xs text-muted">${escapeHtml(b.category || 'Tanpa kategori')}${isLoan ? ' · Pinjaman' : ''}</div>
+            </div>
+          </div>
+          ${billBadge(b)}
+        </div>
+
+        <div class="mt-4">
+          <div class="text-xl font-bold text-white">${formatMoney(total)}</div>
+          ${paid > 0 && remaining > 0 ? `<div class="mt-0.5 text-xs text-muted">Dibayar ${formatMoney(paid)} · sisa ${formatMoney(remaining)}</div>` : ''}
+          ${st === 'paid' ? `<div class="mt-0.5 text-xs text-muted">Lunas${b.paidAt ? ` pada ${formatDay(b.paidAt)}` : ''}</div>` : ''}
+          ${paid > 0 ? `<div class="money-bar mt-3" role="progressbar" aria-valuenow="${pct}" aria-valuemin="0" aria-valuemax="100" aria-label="Progres pembayaran ${name}"><span style="width:${pct}%"></span></div>` : ''}
+        </div>
+
+        <div class="mt-3 flex items-center justify-between gap-2 text-xs">
+          <span class="${st === 'overdue' ? 'negative font-semibold' : st === 'paid' ? 'positive' : 'text-muted'}">${dueText(b)}</span>
+          <span class="text-muted">${formatDay(b.issueDate)}</span>
+        </div>
+        ${notes ? `<p class="mt-2 line-clamp-2 text-xs text-muted">${escapeHtml(notes)}</p>` : ''}
+
+        <div class="mt-4 flex items-center gap-2">
+          ${remaining > 0 ? `<button type="button" class="btn-primary min-h-[40px] flex-1 text-sm" data-pay-bill="${id}">Bayar</button>` : ''}
+          <button type="button" class="icon-btn border border-line hover:border-accent" data-edit-bill="${id}" aria-label="Edit tagihan ${name}" title="Edit"><i data-lucide="pencil" class="h-4 w-4" aria-hidden="true"></i></button>
+          ${isLoan ? '' : `<button type="button" class="icon-btn border border-line hover:border-red-500" data-delete-bill="${id}" aria-label="Hapus tagihan ${name}" title="Hapus"><i data-lucide="trash-2" class="h-4 w-4" aria-hidden="true"></i></button>`}
+        </div>
+      </div>`;
+    }
+
+    function renderBills() {
+      const grid = $('billsGrid');
+      const summary = $('billsSummary');
+      const count = $('billsCount');
+      if (!grid || !summary) return;
+      if (isLoading()) {
+        summary.innerHTML = Array(4).fill('<div class="skeleton h-20 rounded-xl"></div>').join('');
+        grid.innerHTML = Array(3).fill('<div class="skeleton h-44 rounded-2xl"></div>').join('');
+        if (count) count.textContent = 'Memuat tagihan...';
+        return;
+      }
+
+      const active = activeBills();
+      const unpaidTotal = active.reduce((s, b) => s + billRemaining(b), 0);
+      const overdue = active.filter(b => billStatus(b) === 'overdue').length;
+      const soon = active.filter(b => { const d = daysUntil(b.dueDate); return d !== null && d >= 0 && d <= DUE_SOON_DAYS; }).length;
+      const paidCount = appState.bills.filter(b => billStatus(b) === 'paid').length;
+
+      summary.innerHTML = `
+        <div class="hero-panel p-4">
+          <div class="text-xs font-semibold uppercase tracking-wider text-muted">Belum Dibayar</div>
+          <div class="mt-1 text-2xl font-extrabold">${formatMoney(unpaidTotal)}</div>
+          <div class="mt-0.5 text-xs text-muted">${active.length} tagihan aktif</div>
+        </div>
+        <div class="panel p-4">
+          <div class="text-xs font-semibold uppercase tracking-wider text-muted">Mendekati Tempo</div>
+          <div class="mt-1 text-2xl font-bold">${soon}</div>
+          <div class="mt-0.5 text-xs text-muted">≤ ${DUE_SOON_DAYS} hari lagi</div>
+        </div>
+        <div class="panel p-4${overdue ? ' border-red-500/40' : ''}">
+          <div class="text-xs font-semibold uppercase tracking-wider text-muted">Terlambat</div>
+          <div class="mt-1 text-2xl font-bold${overdue ? ' text-red-400' : ''}">${overdue}</div>
+          <div class="mt-0.5 text-xs text-muted">Perlu segera dibayar</div>
+        </div>
+        <div class="panel p-4">
+          <div class="text-xs font-semibold uppercase tracking-wider text-muted">Sudah Dibayar</div>
+          <div class="mt-1 text-2xl font-bold">${paidCount}</div>
+          <div class="mt-0.5 text-xs text-muted">Tersimpan di riwayat</div>
+        </div>`;
+
+      const list = getFilteredBills();
+      if (count) count.textContent = `${list.length} tagihan ditampilkan`;
+      grid.innerHTML = list.length ? list.map(billCardHtml).join('') : `
+        <div class="panel col-span-full p-10 text-center">
+          <i data-lucide="receipt-text" class="mx-auto mb-3 h-8 w-8 text-muted" aria-hidden="true"></i>
+          <div class="font-semibold">${appState.bills.length ? 'Tidak ada tagihan pada filter ini' : 'Belum ada tagihan'}</div>
+          <p class="mt-1 text-sm text-muted">Catat tagihan agar jatuh temponya tidak terlewat.</p>
+          <button class="btn-primary mt-4" data-action="add-bill">+ Tambah Tagihan</button>
+        </div>`;
+    }
+
+    function loanCardHtml(l) {
+      const id = escapeHtml(getId(l));
+      const lender = l.lender || 'Pemberi pinjaman';
+      const name = escapeHtml(lender);
+      const total = loanAmount(l), paid = loanPaid(l), remaining = loanRemaining(l);
+      const st = loanStatus(l);
+      const pct = total > 0 ? Math.min(100, Math.round((paid / total) * 100)) : 0;
+      const bill = loanBillOf(l);
+      const due = daysUntil(l.dueDate);
+      const dueLabelHtml = st === 'paid' ? 'Lunas' : due === null ? 'Tanpa jatuh tempo' : due < 0 ? `Terlambat ${Math.abs(due)} hari` : due === 0 ? 'Jatuh tempo hari ini' : `Jatuh tempo ${formatDay(l.dueDate)}`;
+      const dueCls = st === 'paid' ? 'positive' : due !== null && due < 0 ? 'negative font-semibold' : 'text-muted';
+      return `<div class="panel loan-card p-5">
+        <div class="flex items-start justify-between gap-3">
+          <div class="flex min-w-0 items-center gap-3">
+            <span class="tx-ico" style="background:#8b5cf626;color:#8b5cf6"><i data-lucide="hand-coins" class="h-5 w-5" aria-hidden="true"></i></span>
+            <div class="min-w-0">
+              <div class="truncate font-semibold text-white">${name}</div>
+              <div class="truncate text-xs text-muted">Akun: ${escapeHtml(l.account || 'Tanpa akun')}</div>
+            </div>
+          </div>
+          ${loanBadge(l)}
+        </div>
+
+        <div class="mt-4">
+          <div class="text-xl font-bold text-white">${formatMoney(total)}</div>
+          <div class="mt-0.5 text-xs text-muted">${st === 'paid' ? 'Sudah dibayar penuh' : `Sisa ${formatMoney(remaining)} · dibayar ${formatMoney(paid)}`}</div>
+          <div class="money-bar mt-3" role="progressbar" aria-valuenow="${pct}" aria-valuemin="0" aria-valuemax="100" aria-label="Progres pembayaran pinjaman ${name}"><span style="width:${pct}%"></span></div>
+        </div>
+
+        <div class="mt-3 flex items-center justify-between gap-2 text-xs">
+          <span class="${dueCls}">${dueLabelHtml}</span>
+          <span class="text-muted">Dipinjam ${formatDay(l.date)}</span>
+        </div>
+        ${l.notes ? `<p class="mt-2 line-clamp-2 text-xs text-muted">${escapeHtml(l.notes)}</p>` : ''}
+
+        <div class="mt-4 flex items-center gap-2">
+          ${remaining > 0 && bill ? `<button type="button" class="btn-primary min-h-[40px] flex-1 text-sm" data-pay-bill="${escapeHtml(getId(bill))}">Bayar</button>` : ''}
+          <button type="button" class="icon-btn border border-line hover:border-accent" data-edit-loan="${id}" aria-label="Edit pinjaman ${name}" title="Edit"><i data-lucide="pencil" class="h-4 w-4" aria-hidden="true"></i></button>
+          <button type="button" class="icon-btn border border-line hover:border-red-500" data-delete-loan="${id}" aria-label="Hapus pinjaman ${name}" title="Hapus"><i data-lucide="trash-2" class="h-4 w-4" aria-hidden="true"></i></button>
+        </div>
+      </div>`;
+    }
+
+    function renderLoans() {
+      const grid = $('loansGrid');
+      const summary = $('loansSummary');
+      if (!grid || !summary) return;
+      if (isLoading()) {
+        summary.innerHTML = Array(3).fill('<div class="skeleton h-20 rounded-xl"></div>').join('');
+        grid.innerHTML = Array(3).fill('<div class="skeleton h-48 rounded-2xl"></div>').join('');
+        return;
+      }
+
+      const active = appState.loans.filter(l => loanStatus(l) !== 'paid');
+      const remainingTotal = active.reduce((s, l) => s + loanRemaining(l), 0);
+      const borrowed = appState.loans.reduce((s, l) => s + loanAmount(l), 0);
+      const repaid = appState.loans.reduce((s, l) => s + Math.min(loanPaid(l), loanAmount(l)), 0);
+      const repaidPct = borrowed > 0 ? Math.round((repaid / borrowed) * 100) : 0;
+
+      summary.innerHTML = `
+        <div class="hero-panel p-4">
+          <div class="text-xs font-semibold uppercase tracking-wider text-muted">Sisa Pinjaman</div>
+          <div class="mt-1 text-2xl font-extrabold">${formatMoney(remainingTotal)}</div>
+          <div class="mt-0.5 text-xs text-muted">${active.length} pinjaman aktif</div>
+        </div>
+        <div class="panel p-4">
+          <div class="text-xs font-semibold uppercase tracking-wider text-muted">Total Pinjaman</div>
+          <div class="mt-1 text-2xl font-bold">${formatMoney(borrowed)}</div>
+          <div class="mt-0.5 text-xs text-muted">${appState.loans.length} pinjaman tercatat</div>
+        </div>
+        <div class="panel p-4">
+          <div class="text-xs font-semibold uppercase tracking-wider text-muted">Sudah Dibayar</div>
+          <div class="mt-1 text-2xl font-bold positive">${formatMoney(repaid)}</div>
+          <div class="mt-0.5 text-xs text-muted">${repaidPct}% dari total pinjaman</div>
+        </div>`;
+
+      const sorted = [...appState.loans].sort((a, b) => {
+        const pa = loanStatus(a) === 'paid' ? 1 : 0, pb = loanStatus(b) === 'paid' ? 1 : 0;
+        if (pa !== pb) return pa - pb;
+        return String(a.dueDate || '').localeCompare(String(b.dueDate || ''));
+      });
+      grid.innerHTML = sorted.length ? sorted.map(loanCardHtml).join('') : `
+        <div class="panel col-span-full p-10 text-center">
+          <i data-lucide="hand-coins" class="mx-auto mb-3 h-8 w-8 text-muted" aria-hidden="true"></i>
+          <div class="font-semibold">Belum ada pinjaman</div>
+          <p class="mt-1 text-sm text-muted">Saat pinjaman dicatat, pemasukan dan tagihannya dibuat otomatis.</p>
+          <button class="btn-primary mt-4" data-action="add-loan">+ Catat Pinjaman</button>
+        </div>`;
+    }
+
+    function renderObligations() {
+      const stats = $('obligationStats');
+      const list = $('upcomingBills');
+      if (!stats || !list) return;
+      if (isLoading()) {
+        stats.innerHTML = Array(4).fill('<div class="skeleton h-16 rounded-xl"></div>').join('');
+        list.innerHTML = '';
+        return;
+      }
+
+      const active = activeBills();
+      const unpaidTotal = active.reduce((s, b) => s + billRemaining(b), 0);
+      const soon = active.filter(b => { const d = daysUntil(b.dueDate); return d !== null && d >= 0 && d <= DUE_SOON_DAYS; }).length;
+      const overdue = active.filter(b => billStatus(b) === 'overdue').length;
+      const loanTotal = appState.loans.filter(l => loanStatus(l) !== 'paid').reduce((s, l) => s + loanRemaining(l), 0);
+
+      stats.innerHTML = `
+        <div class="obligation-tile">
+          <div class="text-[11px] font-semibold uppercase tracking-wider text-muted">Tagihan Belum Dibayar</div>
+          <div class="mt-0.5 text-lg font-bold">${formatMoney(unpaidTotal)}</div>
+        </div>
+        <div class="obligation-tile">
+          <div class="text-[11px] font-semibold uppercase tracking-wider text-muted">Mendekati Tempo</div>
+          <div class="mt-0.5 text-lg font-bold${soon ? ' text-yellow-400' : ''}">${soon}</div>
+        </div>
+        <div class="obligation-tile${overdue ? ' border-red-500/40' : ''}">
+          <div class="text-[11px] font-semibold uppercase tracking-wider text-muted">Terlambat</div>
+          <div class="mt-0.5 text-lg font-bold${overdue ? ' text-red-400' : ''}">${overdue}</div>
+        </div>
+        <div class="obligation-tile">
+          <div class="text-[11px] font-semibold uppercase tracking-wider text-muted">Sisa Pinjaman</div>
+          <div class="mt-0.5 text-lg font-bold">${formatMoney(loanTotal)}</div>
+        </div>`;
+
+      const upcoming = [...active]
+        .sort((a, b) => String(a.dueDate || '').localeCompare(String(b.dueDate || '')))
+        .slice(0, 4);
+      list.innerHTML = upcoming.length ? upcoming.map(b => {
+        const cat = categoryByName(b.category);
+        const color = cat ? safeColor(cat.color) : DEFAULT_COLOR;
+        const icon = cat ? safeIcon(cat.icon) : 'receipt-text';
+        const isLate = billStatus(b) === 'overdue';
+        return `<div class="obligation-row">
+          <span class="tx-ico" style="background:${color}26;color:${color}"><i data-lucide="${icon}" class="h-4 w-4" aria-hidden="true"></i></span>
+          <div class="min-w-0 flex-1">
+            <div class="truncate text-sm font-medium text-white">${escapeHtml(getName(b))}</div>
+            <div class="text-xs ${isLate ? 'negative font-semibold' : 'text-muted'}">${dueText(b)}</div>
+          </div>
+          <div class="text-right">
+            <div class="text-sm font-semibold">${formatMoney(billRemaining(b))}</div>
+            <button type="button" class="text-xs font-semibold text-accent hover:underline" data-pay-bill="${escapeHtml(getId(b))}">Bayar</button>
+          </div>
+        </div>`;
+      }).join('') : `<div class="text-sm text-muted">Tidak ada tagihan aktif. Tambahkan tagihan atau pinjaman untuk memantau kewajiban.</div>`;
+    }
+
     function renderCharts(currentPeriodTx) {
       if (!window.Chart) return;
 
@@ -3390,6 +3964,13 @@
     }
 
     function openTransactionForm(id = '') {
+      if (id) {
+        const linked = appState.transactions.find(item => String(getId(item)) === String(id));
+        if (linked && (String(linked.billId || '').trim() || String(linked.loanId || '').trim())) {
+          toast('Transaksi pembayaran tagihan/pinjaman tidak dapat diedit. Hapus transaksi bila perlu dikoreksi.', 'error', { duration: 6000 });
+          return;
+        }
+      }
       $('transactionForm').reset();
       $('transactionId').value = id;
       ['txCategory', 'txAccount', 'txFromAccount', 'txToAccount'].forEach(k => { $(k).value = ''; });
@@ -3565,10 +4146,29 @@
     /* ---------- Delete Transaction with Undo ---------- */
     const pendingDeletes = new Map();
 
-    function requestDeleteTransaction(id) {
-      const idx = appState.transactions.findIndex(item => String(getId(item)) === String(id));
+    async function requestDeleteTransaction(id) {
+      let idx = appState.transactions.findIndex(item => String(getId(item)) === String(id));
       if (idx < 0) return;
       const record = appState.transactions[idx];
+
+      /* Pemasukan pinjaman dikelola dari menu Pinjaman agar nominal pinjaman tetap konsisten. */
+      if (String(record.loanId || '').trim() && getType(record) === 'income') {
+        toast('Transaksi pemasukan pinjaman dikelola dari menu Pinjaman. Hapus pinjamannya di sana.', 'error', { duration: 6000 });
+        return;
+      }
+
+      /* Transaksi pembayaran tagihan memengaruhi status tagihan/pinjaman:
+         minta konfirmasi lalu hapus langsung tanpa jendela undo. */
+      if (String(record.billId || '').trim()) {
+        const ok = await confirmDialog('Transaksi ini tercatat sebagai pembayaran tagihan. Menghapusnya akan mengembalikan status tagihan/pinjaman terkait. Lanjutkan?', 'Hapus');
+        if (!ok) return;
+        appState.transactions = appState.transactions.filter(item => String(getId(item)) !== String(id));
+        renderAll();
+        enqueueJob({ entity: 'transaction', operation: 'delete', method: 'deleteTransaction', localId: id, payload: { id }, reload: true });
+        toast('Pembayaran dibatalkan, status tagihan diperbarui.', 'info');
+        return;
+      }
+
       appState.transactions.splice(idx, 1);
       renderAll();
 
@@ -3582,7 +4182,8 @@
       if (!p) return;
       clearTimeout(p.timer);
       pendingDeletes.delete(String(id));
-      enqueueJob({ entity: 'transaction', operation: 'delete', method: 'deleteTransaction', localId: id, payload: { id } });
+      const linked = Boolean(String((p.record && p.record.billId) || '').trim());
+      enqueueJob({ entity: 'transaction', operation: 'delete', method: 'deleteTransaction', localId: id, payload: { id }, reload: linked });
     }
 
     function undoDelete(id) {
@@ -3793,6 +4394,352 @@
       toast('Akun dihapus.', 'info');
     }
 
+    /* ---------- Tagihan: Form & Pembayaran ---------- */
+    function fillAccountSelect(selectId, selectedId) {
+      const el = $(selectId);
+      if (!el) return;
+      if (!appState.accounts.length) {
+        el.innerHTML = '<option value="">Belum ada akun</option>';
+        return;
+      }
+      const chosen = String(selectedId || lastAccount() || getId(appState.accounts[0]));
+      el.innerHTML = appState.accounts.map(a => {
+        const id = String(getId(a));
+        const label = `${getName(a)} · ${formatMoney(calculateAccountBalance(a))}`;
+        return `<option value="${escapeHtml(id)}"${id === chosen ? ' selected' : ''}>${escapeHtml(label)}</option>`;
+      }).join('');
+    }
+
+    function fillBillCategorySelect(selectedName) {
+      const el = $('billCategory');
+      if (!el) return;
+      const cats = appState.categories.filter(c => getType(c) === 'expense');
+      const wanted = String(selectedName || '');
+      const html = cats.map(c => {
+        const nm = getName(c);
+        return `<option value="${escapeHtml(nm)}"${String(nm) === wanted ? ' selected' : ''}>${escapeHtml(nm)}</option>`;
+      }).join('');
+      const extra = wanted && !cats.some(c => String(getName(c)) === wanted)
+        ? `<option value="${escapeHtml(wanted)}" selected>${escapeHtml(wanted)}</option>` : '';
+      el.innerHTML = extra + (html || '<option value="Tagihan &amp; Utilitas">Tagihan &amp; Utilitas</option>');
+    }
+
+    function openBillForm(id = '') {
+      const b = id ? findBill(id) : null;
+      if (id && !b) return toast('Tagihan tidak ditemukan.', 'error');
+      const isLoanBill = Boolean(b && String(b.loanId || '').trim());
+      $('billForm').reset();
+      $('billId').value = id;
+      $('billModalTitle').textContent = b ? 'Edit Tagihan' : 'Tambah Tagihan';
+      $('billLoanNotice').classList.toggle('hidden-view', !isLoanBill);
+      $('billAmount').disabled = isLoanBill;
+      $('billCategory').disabled = isLoanBill;
+      fillBillCategorySelect(b ? b.category : 'Tagihan & Utilitas');
+      $('billName').value = b ? getName(b) : '';
+      $('billAmount').value = b ? formatNumber(billAmount(b)) : '';
+      $('billIssueDate').value = b ? (String(b.issueDate || '').slice(0, 10) || today()) : today();
+      $('billDueDate').value = b ? (String(b.dueDate || '').slice(0, 10) || today()) : dayOffset(7);
+      $('billNotes').value = b ? (b.notes || '') : '';
+      refreshIcons();
+      showModal('billModal');
+      if (!b) setTimeout(() => $('billName').focus(), 60);
+    }
+
+    function handleBillSubmit(event) {
+      event.preventDefault();
+      const id = $('billId').value || null;
+      const name = $('billName').value.trim();
+      const category = $('billCategory').value;
+      const amount = parseAmount($('billAmount').value);
+      const issueDate = $('billIssueDate').value;
+      const dueDate = $('billDueDate').value;
+      const notes = $('billNotes').value.trim();
+      const prev = id ? findBill(id) : null;
+
+      if (!name) return toast('Nama tagihan wajib diisi.', 'error');
+      if (!category) return toast('Pilih kategori tagihan.', 'error');
+      if (amount <= 0) return toast('Nominal tagihan harus lebih dari 0.', 'error');
+      if (!issueDate) return toast('Tanggal tagihan wajib diisi.', 'error');
+      if (!dueDate) return toast('Jatuh tempo wajib diisi.', 'error');
+      if (dueDate < issueDate) return toast('Jatuh tempo tidak boleh sebelum tanggal tagihan.', 'error');
+      const paid = prev ? billPaid(prev) : 0;
+      if (prev && String(prev.loanId || '').trim() && amount !== billAmount(prev)) {
+        return toast('Nominal tagihan pinjaman mengikuti data pinjaman.', 'error');
+      }
+      if (prev && amount < paid) return toast('Nominal lebih kecil dari jumlah yang sudah dibayar.', 'error');
+
+      const data = { name, category, amount, issueDate, dueDate, notes };
+      const localId = id || `local_${makeId()}`;
+      const record = {
+        ...(prev || {}),
+        ...data,
+        id: localId,
+        paidAmount: paid,
+        remaining: Math.max(0, amount - paid),
+        status: paid <= 0 ? 'unpaid' : paid >= amount ? 'paid' : 'partial',
+        syncStatus: 'pending'
+      };
+
+      if (id) appState.bills = appState.bills.map(x => String(getId(x)) === String(id) ? record : x);
+      else appState.bills.unshift(record);
+
+      closeModal('billModal');
+      renderAll();
+      toast(id ? 'Tagihan diperbarui.' : 'Tagihan ditambahkan.', 'success');
+      enqueueJob({
+        entity: 'bill', operation: id ? 'update' : 'create',
+        method: id ? 'updateBill' : 'createBill',
+        localId, localRecord: record, payload: id ? { ...data, id } : data
+      });
+    }
+
+    async function requestDeleteBill(id) {
+      const b = findBill(id);
+      if (!b) return;
+      if (String(b.loanId || '').trim()) return toast('Tagihan ini terikat pada pinjaman. Kelola melalui menu Pinjaman.', 'error', { duration: 6000 });
+      if (billPaid(b) > 0) return toast('Tagihan yang sudah memiliki pembayaran tidak dapat dihapus.', 'error', { duration: 6000 });
+      if (!(await confirmDialog(`Hapus tagihan "${getName(b)}"?`, 'Hapus'))) return;
+      appState.bills = appState.bills.filter(x => String(getId(x)) !== String(id));
+      renderAll();
+      enqueueJob({ entity: 'bill', operation: 'delete', method: 'deleteBill', localId: id, payload: { id } });
+      toast('Tagihan dihapus.', 'info');
+    }
+
+    let payBillBusy = false;
+
+    function openPayBillForm(billId) {
+      const b = findBill(billId);
+      if (!b) return toast('Tagihan tidak ditemukan.', 'error');
+      const remaining = billRemaining(b);
+      if (remaining <= 0) return toast('Tagihan ini sudah dibayar penuh.', 'info');
+
+      payBillBusy = false;
+      $('payBillForm').reset();
+      $('payBillId').value = getId(b);
+      $('payBillModalTitle').textContent = String(b.loanId || '').trim() ? 'Bayar Pinjaman' : 'Bayar Tagihan';
+      $('payBillInfo').innerHTML = `
+        <div class="font-semibold text-white">${escapeHtml(getName(b))}</div>
+        <div class="mt-1 text-xs text-muted">${escapeHtml(b.category || 'Tagihan')} · ${dueText(b)}</div>
+        <div class="mt-2 flex items-baseline justify-between gap-2">
+          <span class="text-xs text-muted">Sisa tagihan</span>
+          <span class="font-semibold">${formatMoney(remaining)}</span>
+        </div>`;
+      $('payBillAmount').value = formatNumber(remaining);
+      $('payBillHint').textContent = `Maksimal ${formatMoney(remaining)}. Pembayaran sebagian diperbolehkan.`;
+      fillAccountSelect('payBillAccount', '');
+      $('payBillSubmit').disabled = appState.accounts.length === 0;
+      $('payBillSubmit').textContent = appState.accounts.length ? 'Bayar' : 'Belum ada akun';
+      refreshIcons();
+      showModal('payBillModal');
+      setTimeout(() => $('payBillAmount').focus(), 60);
+    }
+
+    function handlePayBillSubmit(event) {
+      event.preventDefault();
+      if (payBillBusy) return;
+      const id = $('payBillId').value;
+      const b = findBill(id);
+      if (!b) return toast('Tagihan tidak ditemukan.', 'error');
+      const remaining = billRemaining(b);
+      const amount = parseAmount($('payBillAmount').value);
+      const accountId = $('payBillAccount').value;
+
+      if (!accountId) return toast('Pilih akun pembayaran.', 'error');
+      if (amount <= 0) return toast('Nominal pembayaran harus lebih dari 0.', 'error');
+      if (amount > remaining) return toast(`Nominal melebihi sisa tagihan (${formatMoney(remaining)}).`, 'error');
+
+      payBillBusy = true;
+      $('payBillSubmit').disabled = true;
+      $('payBillSubmit').textContent = 'Menyimpan...';
+
+      const account = appState.accounts.find(a => String(getId(a)) === String(accountId));
+      const accName = account ? getName(account) : '';
+      const stamp = new Date().toISOString();
+      const localTxId = `local_${makeId()}`;
+      const newPaid = billPaid(b) + amount;
+      const paidFull = newPaid >= billAmount(b);
+      const cat = categoryByName(b.category);
+      const billName = getName(b);
+      const prefixed = /^pembayaran\b/i.test(billName);
+      const txTitle = prefixed ? billName : `Pembayaran ${billName}`;
+
+      appState.transactions.push({
+        id: localTxId,
+        title: txTitle,
+        description: txTitle,
+        type: 'expense',
+        amount,
+        date: today(),
+        category: b.category || '',
+        categoryId: cat ? getId(cat) : '',
+        account: accName,
+        accountId,
+        notes: prefixed ? billName : `Pembayaran tagihan ${billName}`,
+        billId: getId(b),
+        loanId: b.loanId || '',
+        createdAt: stamp,
+        updatedAt: stamp,
+        syncStatus: 'pending'
+      });
+
+      appState.bills = appState.bills.map(x => String(getId(x)) === String(id) ? {
+        ...x,
+        paidAmount: newPaid,
+        remaining: Math.max(0, billAmount(x) - newPaid),
+        status: paidFull ? 'paid' : 'partial',
+        paymentAccount: accName,
+        paidAt: paidFull ? stamp : (x.paidAt || ''),
+        transactionIds: [x.transactionIds, localTxId].filter(Boolean).join(','),
+        syncStatus: 'pending'
+      } : x);
+
+      if (String(b.loanId || '').trim()) {
+        appState.loans = appState.loans.map(l => {
+          if (String(getId(l)) !== String(b.loanId)) return l;
+          const total = loanAmount(l);
+          const paid = Math.min(total, loanPaid(l) + amount);
+          return { ...l, paidAmount: paid, remaining: Math.max(0, total - paid), status: paid >= total ? 'paid' : paid > 0 ? 'partial' : 'unpaid', syncStatus: 'pending' };
+        });
+      }
+
+      closeModal('payBillModal');
+      renderAll();
+      toast(paidFull ? `"${getName(b)}" lunas.` : `Pembayaran ${formatMoney(amount)} dicatat.`, 'success');
+      enqueueJob({
+        entity: 'bill', operation: 'action', method: 'payBill', localId: id,
+        payload: { id, accountId, amount, date: today() }, reload: true
+      });
+    }
+
+    /* ---------- Pinjaman: Form ---------- */
+    function openLoanForm(id = '') {
+      const l = id ? findLoan(id) : null;
+      if (id && !l) return toast('Pinjaman tidak ditemukan.', 'error');
+      const locked = Boolean(l && loanPaid(l) > 0);
+
+      $('loanForm').reset();
+      $('loanId').value = id;
+      $('loanModalTitle').textContent = l ? 'Edit Pinjaman' : 'Catat Pinjaman';
+      $('loanName').value = l ? (l.lender || '') : '';
+      $('loanAmount').value = l ? formatNumber(loanAmount(l)) : '';
+      $('loanDate').value = l ? (String(l.date || '').slice(0, 10) || today()) : today();
+      $('loanDueDate').value = l ? (String(l.dueDate || '').slice(0, 10) || dayOffset(30)) : dayOffset(30);
+      $('loanNotes').value = l ? (l.notes || '') : '';
+      fillAccountSelect('loanAccount', l ? (l.accountId || '') : '');
+      $('loanAmount').disabled = locked;
+      $('loanDate').disabled = locked;
+      $('loanAccount').disabled = locked;
+      $('loanCreateNotice').classList.toggle('hidden-view', Boolean(l));
+      $('loanEditHint').classList.toggle('hidden-view', !locked);
+      refreshIcons();
+      showModal('loanModal');
+      if (!l) setTimeout(() => $('loanName').focus(), 60);
+    }
+
+    function handleLoanSubmit(event) {
+      event.preventDefault();
+      const id = $('loanId').value || null;
+      const prev = id ? findLoan(id) : null;
+      const lender = $('loanName').value.trim();
+      const amount = parseAmount($('loanAmount').value);
+      const date = $('loanDate').value;
+      const dueDate = $('loanDueDate').value;
+      const accountId = $('loanAccount').value;
+      const notes = $('loanNotes').value.trim();
+
+      if (!lender) return toast('Nama pemberi pinjaman wajib diisi.', 'error');
+      if (amount <= 0) return toast('Nominal pinjaman harus lebih dari 0.', 'error');
+      if (!date) return toast('Tanggal pinjaman wajib diisi.', 'error');
+      if (!dueDate) return toast('Jatuh tempo wajib diisi.', 'error');
+      if (dueDate < date) return toast('Jatuh tempo tidak boleh sebelum tanggal pinjaman.', 'error');
+      if (!accountId) return toast('Pilih akun penerima dana.', 'error');
+      if (prev && loanPaid(prev) > 0 && (amount !== loanAmount(prev) || date !== String(prev.date || '').slice(0, 10))) {
+        return toast('Pinjaman yang sudah dibayar hanya dapat diubah nama, jatuh tempo, dan catatannya.', 'error', { duration: 6000 });
+      }
+
+      const account = appState.accounts.find(a => String(getId(a)) === String(accountId));
+      const accName = account ? getName(account) : '';
+      const data = { lender, amount, date, dueDate, accountId, notes };
+      const localId = id || `local_${makeId()}`;
+      const stamp = new Date().toISOString();
+      let newLoanRecord = null;
+
+      if (id) {
+        const paid = loanPaid(prev);
+        appState.loans = appState.loans.map(x => String(getId(x)) === String(id)
+          ? { ...x, ...data, account: accName, remaining: Math.max(0, amount - paid), syncStatus: 'pending' }
+          : x);
+        if (paid === 0) {
+          appState.transactions = appState.transactions.map(t => String(t.loanId || '') === String(id) ? {
+            ...t, title: `Pinjaman dari ${lender}`, description: `Pinjaman dari ${lender}`,
+            amount, date, account: accName, accountId, notes, updatedAt: stamp, syncStatus: 'pending'
+          } : t);
+          appState.bills = appState.bills.map(b => String(b.loanId || '') === String(id) ? {
+            ...b, name: `Pembayaran pinjaman ${lender}`, amount, issueDate: date, dueDate,
+            remaining: Math.max(0, amount - billPaid(b)), syncStatus: 'pending'
+          } : b);
+        } else {
+          appState.bills = appState.bills.map(b => String(b.loanId || '') === String(id) ? { ...b, dueDate, syncStatus: 'pending' } : b);
+        }
+      } else {
+        const billId = `local_${makeId()}`;
+        const txId = `local_${makeId()}`;
+        const incomeCat = appState.categories.find(c => getType(c) === 'income' && String(getName(c)).toLowerCase() === 'pinjaman')
+          || appState.categories.find(c => getType(c) === 'income');
+        const payCat = appState.categories.find(c => getType(c) === 'expense' && String(getName(c)).toLowerCase() === 'cicilan & pinjaman')
+          || appState.categories.find(c => getType(c) === 'expense');
+
+        newLoanRecord = {
+          ...data, account: accName, id: localId, paidAmount: 0, remaining: amount, status: 'unpaid',
+          billId, incomeTransactionId: txId, createdAt: stamp, syncStatus: 'pending'
+        };
+        appState.loans.unshift(newLoanRecord);
+        appState.bills.unshift({
+          id: billId, name: `Pembayaran pinjaman ${lender}`, category: payCat ? getName(payCat) : 'Cicilan & Pinjaman',
+          amount, issueDate: date, dueDate, status: 'unpaid', paidAmount: 0, remaining: amount,
+          notes: `Tagihan otomatis untuk pinjaman dari ${lender}`, loanId: localId,
+          createdAt: stamp, updatedAt: stamp, syncStatus: 'pending'
+        });
+        appState.transactions.push({
+          id: txId, title: `Pinjaman dari ${lender}`, description: `Pinjaman dari ${lender}`,
+          type: 'income', amount, date, category: incomeCat ? getName(incomeCat) : 'Pinjaman',
+          categoryId: incomeCat ? getId(incomeCat) : '', account: accName, accountId, notes,
+          billId: '', loanId: localId, createdAt: stamp, updatedAt: stamp, syncStatus: 'pending'
+        });
+      }
+
+      closeModal('loanModal');
+      renderAll();
+      toast(id ? 'Pinjaman diperbarui.' : 'Pinjaman dicatat: pemasukan & tagihan dibuat otomatis.', 'success', { duration: 4500 });
+      enqueueJob({
+        entity: 'loan', operation: id ? 'update' : 'create',
+        method: id ? 'updateLoan' : 'createLoan',
+        localId, localRecord: newLoanRecord,
+        payload: id ? { ...data, id } : data, reload: true
+      });
+    }
+
+    async function requestDeleteLoan(id) {
+      const l = findLoan(id);
+      if (!l) return;
+      const total = loanAmount(l), paid = loanPaid(l);
+      if (paid > 0 && paid < total) return toast('Pinjaman dengan pembayaran sebagian tidak dapat dihapus.', 'error', { duration: 6000 });
+      const lender = l.lender || 'pinjaman ini';
+      const message = paid <= 0
+        ? `Hapus pinjaman dari "${lender}"? Transaksi pemasukan ${formatMoney(total)} dan tagihannya juga akan dibatalkan.`
+        : `Hapus pinjaman dari "${lender}" yang sudah lunas? Transaksi tetap tersimpan sebagai riwayat dan tagihan pinjaman dihapus.`;
+      if (!(await confirmDialog(message, 'Hapus'))) return;
+
+      appState.loans = appState.loans.filter(x => String(getId(x)) !== String(id));
+      appState.bills = appState.bills.filter(b => String(b.loanId || '') !== String(id));
+      if (paid <= 0) appState.transactions = appState.transactions.filter(t => String(t.loanId || '') !== String(id));
+      else appState.transactions = appState.transactions.map(t => String(t.loanId || '') === String(id) ? { ...t, loanId: '', billId: '' } : t);
+
+      renderAll();
+      enqueueJob({ entity: 'loan', operation: 'delete', method: 'deleteLoan', localId: id, payload: { id }, reload: true });
+      toast('Pinjaman dihapus.', 'info');
+    }
+
     /* ---------- Event Listeners ---------- */
     document.querySelectorAll('[data-view]').forEach(b => b.addEventListener('click', () => navigate(b.dataset.view)));
 
@@ -3813,6 +4760,25 @@
     $('transactionForm').addEventListener('submit', handleTransactionSubmit);
     $('categoryForm').addEventListener('submit', handleCategorySubmit);
     $('accountForm').addEventListener('submit', handleAccountSubmit);
+    $('billForm').addEventListener('submit', handleBillSubmit);
+    $('payBillForm').addEventListener('submit', handlePayBillSubmit);
+    $('loanForm').addEventListener('submit', handleLoanSubmit);
+    $('addBillBtn').addEventListener('click', () => openBillForm());
+    $('addLoanBtn').addEventListener('click', () => openLoanForm());
+    $('billFilterStatus').addEventListener('change', () => { renderBills(); refreshIcons(); });
+    $('billFilterPeriod').addEventListener('change', () => { renderBills(); refreshIcons(); });
+    $('clearBillFilters').addEventListener('click', () => {
+      $('billFilterStatus').value = '';
+      $('billFilterPeriod').value = '';
+      renderBills();
+      refreshIcons();
+    });
+    ['billAmount', 'loanAmount', 'payBillAmount'].forEach(id => {
+      $(id).addEventListener('input', e => {
+        const n = parseAmount(e.target.value);
+        e.target.value = n ? formatNumber(n) : '';
+      });
+    });
 
     $('saveTemplateBtn').addEventListener('click', handleSaveTemplate);
     $('deleteTxBtn').addEventListener('click', () => {
@@ -3912,6 +4878,20 @@
       if (d.deleteCategory) requestDeleteCategory(d.deleteCategory);
       if (d.editAccount) openAccountForm(d.editAccount);
       if (d.deleteAccount) requestDeleteAccount(d.deleteAccount);
+      if (d.payBill) openPayBillForm(d.payBill);
+      if (d.editBill) openBillForm(d.editBill);
+      if (d.deleteBill) requestDeleteBill(d.deleteBill);
+      if (d.editLoan) openLoanForm(d.editLoan);
+      if (d.deleteLoan) requestDeleteLoan(d.deleteLoan);
+      if (d.payLoan) {
+        const loan = findLoan(d.payLoan);
+        const loanBill = loan ? loanBillOf(loan) : null;
+        if (loanBill) openPayBillForm(getId(loanBill));
+        else toast('Tagihan pinjaman tidak ditemukan. Muat ulang data lalu coba lagi.', 'error');
+      }
+      if (d.goto) navigate(d.goto);
+      if (d.action === 'add-bill') openBillForm();
+      if (d.action === 'add-loan') openLoanForm();
       if (d.accountType) setAccountType(d.accountType);
       if (d.txType) setTxType(d.txType);
       if (d.addAmount) {

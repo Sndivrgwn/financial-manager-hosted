@@ -1,6 +1,7 @@
 import 'dotenv/config';
 import express from 'express';
 import { google } from 'googleapis';
+import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -8,11 +9,13 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PORT = Number(process.env.PORT || 3000);
 const SPREADSHEET_ID = process.env.GOOGLE_SHEET_ID;
 const HEADERS = {
-  Transactions: ['id','date','type','category','description','amount','account','paymentMethod','notes','createdAt','updatedAt','fromAccount','toAccount'],
+  Transactions: ['id','date','type','category','description','amount','account','paymentMethod','notes','createdAt','updatedAt','fromAccount','toAccount','billId','loanId'],
   Categories: ['id','name','type','color','icon','budget','createdAt'],
   Accounts: ['id','name','type','initialBalance','createdAt'],
   Settings: ['key','value'],
   Templates: ['id','title','type','categoryId','accountId','amount','createdAt','fromAccountId','toAccountId'],
+  Bills: ['id','name','category','amount','issueDate','dueDate','status','paidAmount','notes','createdAt','updatedAt','loanId','paymentAccount','paymentTransactionId','transactionIds','paidAt'],
+  Loans: ['id','lender','amount','date','account','dueDate','notes','status','paidAmount','createdAt','updatedAt','incomeTransactionId','category','billId'],
   ProcessedRequests: ['requestId','method','resultJson','createdAt']
 };
 const MAX_PROCESSED_REQUESTS = 1000;
@@ -37,9 +40,24 @@ if (!SPREADSHEET_ID) {
   process.exit(1);
 }
 
-const credentials = JSON.parse(
-  process.env.GOOGLE_SERVICE_ACCOUNT_JSON
-);
+/* Terima JSON inline (hosting) atau path file (GOOGLE_APPLICATION_CREDENTIALS). */
+function loadServiceAccount() {
+  const inline = process.env.GOOGLE_SERVICE_ACCOUNT_JSON;
+  if (inline) {
+    try { return JSON.parse(inline); }
+    catch (error) {
+      console.error('GOOGLE_SERVICE_ACCOUNT_JSON bukan JSON yang valid.');
+      process.exit(1);
+    }
+  }
+  const file = process.env.GOOGLE_APPLICATION_CREDENTIALS || './credentials/service-account.json';
+  try { return JSON.parse(fs.readFileSync(file, 'utf8')); }
+  catch (error) {
+    console.error(`Kredensial service account tidak dapat dibaca dari ${file}. Isi GOOGLE_SERVICE_ACCOUNT_JSON atau GOOGLE_APPLICATION_CREDENTIALS.`);
+    process.exit(1);
+  }
+}
+const credentials = loadServiceAccount();
 
 const auth = new google.auth.GoogleAuth({
   credentials,
@@ -64,6 +82,15 @@ const validType = t => ['income','expense','transfer'].includes(t);
 const newId = prefix => `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2,10)}`;
 const now = () => new Date().toISOString();
 const colLetter = n => { let s=''; while(n){const r=(n-1)%26;s=String.fromCharCode(65+r)+s;n=Math.floor((n-1)/26);}return s; };
+const localToday = () => { const d = new Date(); const p = n => String(n).padStart(2,'0'); return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}`; };
+const daysFromToday = value => {
+  const s = clean(value).slice(0,10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return null;
+  const target = Date.parse(`${s}T00:00:00`);
+  const base = Date.parse(`${localToday()}T00:00:00`);
+  if (Number.isNaN(target) || Number.isNaN(base)) return null;
+  return Math.round((target - base) / 86400000);
+};
 
 async function metadata() {
   const r = await sheetsApi.spreadsheets.get({ spreadsheetId: SPREADSHEET_ID, fields: 'spreadsheetId,spreadsheetUrl,sheets(properties(sheetId,title,index))' });
@@ -105,7 +132,9 @@ async function initializeDatabaseOnce() {
       ['CAT-EX-3','Belanja & Kebutuhan','expense','#ec4899','shopping-bag',1500000,stamp],
       ['CAT-EX-4','Tagihan & Utilitas','expense','#eab308','receipt',1000000,stamp],
       ['CAT-EX-5','Hiburan & Hobi','expense','#06b6d4','film',500000,stamp],
-      ['CAT-EX-6','Kesehatan','expense','#14b8a6','heart-pulse',500000,stamp]
+      ['CAT-EX-6','Kesehatan','expense','#14b8a6','heart-pulse',500000,stamp],
+      ['CAT-IN-4','Pinjaman','income','#8b5cf6','hand-coins',0,stamp],
+      ['CAT-EX-7','Cicilan & Pinjaman','expense','#a855f7','credit-card',0,stamp]
     ]);
   }
   if (!(await readRows('Accounts')).length) {
@@ -220,6 +249,8 @@ async function getAppData() {
   const txRaw = await readRows('Transactions');
   const settingsRows = await readRows('Settings');
   const templatesRaw = await readRows('Templates');
+  const billsRaw = await readRows('Bills');
+  const loansRaw = await readRows('Loans');
   const settings = Object.fromEntries(settingsRows.map(r => [r.key, r.value]));
   const catByName = Object.fromEntries(categoriesRaw.map(c => [String(c.name), c]));
   const accByName = Object.fromEntries(accountsRaw.map(a => [String(a.name), a]));
@@ -242,7 +273,9 @@ async function getAppData() {
     });
     return { ...account, initialBalance, openingBalance: initialBalance, currentBalance: initialBalance + net };
   });
-  return { success: true, categories, accounts, transactions, templates: templatesRaw.map(t=>({...t,amount:num(t.amount)})), settings, spreadsheetUrl: `https://docs.google.com/spreadsheets/d/${SPREADSHEET_ID}/edit` };
+  const bills = billsRaw.map(b => mapBill(b, catByName));
+  const loans = loansRaw.map(l => mapLoan(l, accByName));
+  return { success: true, categories, accounts, transactions, templates: templatesRaw.map(t=>({...t,amount:num(t.amount)})), bills, loans, settings, spreadsheetUrl: `https://docs.google.com/spreadsheets/d/${SPREADSHEET_ID}/edit` };
 }
 async function buildTransaction(data) {
   const type = clean(data.type); if (!validType(type) || type === 'transfer' && !validType(type)) throw new Error('Tipe transaksi harus income, expense, atau transfer.');
@@ -271,13 +304,37 @@ async function buildTransaction(data) {
   return { date: validateDate(data.date), type, category, description: cellText(description), amount, account, paymentMethod: cellText(data.paymentMethod || '-'), notes: cellText(data.notes || ''), fromAccount, toAccount };
 }
 async function createTransaction(d={}) {
-  return idempotent('createTransaction',d,async()=>{ const rec=await buildTransaction(d); const id=newId('TXN'); const stamp=now(); await appendRows('Transactions',[[id,rec.date,rec.type,rec.category,rec.description,rec.amount,rec.account,rec.paymentMethod,rec.notes,stamp,stamp,rec.fromAccount,rec.toAccount]]); return {success:true,message:'Transaksi berhasil ditambahkan',id}; });
+  return idempotent('createTransaction',d,async()=>{ const rec=await buildTransaction(d); const id=newId('TXN'); const stamp=now(); await appendTransactionRecord({...rec,id,createdAt:stamp,updatedAt:stamp,billId:'',loanId:''}); return {success:true,message:'Transaksi berhasil ditambahkan',id}; });
 }
 async function updateTransaction(d={}) {
   const id=clean(d.id); if(!id) throw new Error('ID transaksi tidak valid.');
-  return idempotent('updateTransaction',d,async()=>{ const found=await findRow('Transactions',id); if(!found) throw new Error('Transaksi tidak ditemukan.'); const rec=await buildTransaction(d); const stamp=now(); await writeObjectRow('Transactions',found.rowNumber,{...rec,id,createdAt:found.object.createdAt||stamp,updatedAt:stamp}); return {success:true,message:'Transaksi berhasil diperbarui',id}; });
+  return idempotent('updateTransaction',d,async()=>{
+    const found=await findRow('Transactions',id);
+    if(!found) throw new Error('Transaksi tidak ditemukan.');
+    /* Transaksi turunan tagihan/pinjaman dijaga agar relasi dan saldo tetap konsisten. */
+    if(clean(found.object.billId)||clean(found.object.loanId)) throw new Error('Transaksi pembayaran tagihan/pinjaman tidak dapat diedit. Hapus transaksi bila perlu dikoreksi.');
+    const rec=await buildTransaction(d); const stamp=now();
+    await writeObjectRow('Transactions',found.rowNumber,{...rec,id,createdAt:found.object.createdAt||stamp,updatedAt:stamp,billId:found.object.billId||'',loanId:found.object.loanId||''});
+    return {success:true,message:'Transaksi berhasil diperbarui',id};
+  });
 }
-async function deleteTransaction(d={}) { const id=clean(d.id); if(!id) throw new Error('ID transaksi tidak valid.'); return idempotent('deleteTransaction',d,async()=>{const f=await findRow('Transactions',id); if(f) await deleteRow('Transactions',f.rowNumber); return {success:true,message:f?'Transaksi berhasil dihapus':'Transaksi sudah tidak ada',id};}); }
+async function deleteTransaction(d={}) {
+  const id=clean(d.id); if(!id) throw new Error('ID transaksi tidak valid.');
+  return idempotent('deleteTransaction',d,async()=>{
+    const f=await findRow('Transactions',id);
+    if(!f) return {success:true,message:'Transaksi sudah tidak ada',id};
+    /* Pemasukan pinjaman hanya boleh dibatalkan lewat menu Pinjaman. */
+    if(clean(f.object.loanId) && String(f.object.type)==='income') throw new Error('Transaksi pemasukan pinjaman tidak dapat dihapus di sini. Hapus pinjamannya melalui menu Pinjaman.');
+    const billId=clean(f.object.billId);
+    await deleteRow('Transactions',f.rowNumber);
+    /* Transaksi pembayaran: kembalikan nominal tagihan/pinjaman agar konsisten. */
+    if(billId){
+      try{ await revertBillPayment(billId,num(f.object.amount),id); }
+      catch(error){ try{ await restoreRow('Transactions',f.values); } catch(_){ /* best effort */ } throw error; }
+    }
+    return {success:true,message:'Transaksi berhasil dihapus',id};
+  });
+}
 async function createCategory(d={}) {
   const name=clean(d.name); if(!name || !['income','expense'].includes(d.type)) throw new Error('Nama kategori dan jenis income/expense wajib diisi.'); const budget=num(d.budget);
   return idempotent('createCategory',d,async()=>{if(await nameTaken('Categories',name,null)) throw new Error(`Kategori "${name}" sudah ada.`); const id=newId('CAT'); await appendRows('Categories',[[id,cellText(name),d.type,clean(d.color||'#ec643d'),clean(d.icon||'folder'),budget,now()]]); return {success:true,message:'Kategori berhasil dibuat',id};});
@@ -294,7 +351,394 @@ async function deleteAccount(d={}) { const id=clean(d.id);if(!id)throw new Error
 async function createTemplate(d={}) { const title=clean(d.title),amount=Number(d.amount===undefined||d.amount===''?0:d.amount);if(!title)throw new Error('Nama template wajib diisi.');if(title.length>120)throw new Error('Nama template maksimal 120 karakter.');if(!validType(d.type))throw new Error('Jenis template tidak valid.');if(!Number.isFinite(amount)||amount<0)throw new Error('Nominal template tidak valid.');return idempotent('createTemplate',d,async()=>{const rows=await readRows('Templates');if(rows.length>=MAX_TEMPLATES)throw new Error(`Jumlah template maksimal ${MAX_TEMPLATES}.`);if(rows.some(r=>String(r.title).toLowerCase()===title.toLowerCase()))throw new Error(`Template "${title}" sudah ada.`);const id=newId('TPL');await appendRows('Templates',[[id,cellText(title),d.type,clean(d.categoryId),clean(d.accountId),amount,now(),clean(d.fromAccountId),clean(d.toAccountId)]]);return{success:true,message:'Template berhasil disimpan',id};}); }
 async function deleteTemplate(d={}) { const id=clean(d.id);if(!id)throw new Error('ID template tidak valid.');return idempotent('deleteTemplate',d,async()=>{const f=await findRow('Templates',id);if(f)await deleteRow('Templates',f.rowNumber);return{success:true,message:f?'Template berhasil dihapus':'Template sudah tidak ada',id};}); }
 
-const methods = { getAppData, createTransaction, updateTransaction, deleteTransaction, createCategory, updateCategory, deleteCategory, createAccount, updateAccount, deleteAccount, createTemplate, deleteTemplate };
+/* ========================================================================
+ * TAGIHAN & PINJAMAN
+ * Satu tagihan = satu kewajiban. Satu pinjaman selalu menghasilkan:
+ *   1 transaksi pemasukan (dana diterima) + 1 tagihan pembayaran (relasi loanId).
+ * Pembayaran tagihan selalu menghasilkan 1 transaksi pengeluaran (relasi billId).
+ * ===================================================================== */
+
+/* Cari kategori berdasarkan id/nama; buat kategori bawaan bila belum ada. */
+async function resolveCategory(ref, type, fallbackName) {
+  const key = clean(ref);
+  if (key) {
+    const found = await findByIdOrName('Categories', key);
+    if (found && String(found.type) === type) return found;
+  }
+  const rows = await readRows('Categories');
+  const typed = rows.filter(r => String(r.type) === type);
+  const wanted = clean(fallbackName);
+  if (wanted) {
+    const exact = typed.find(r => String(r.name).toLowerCase() === wanted.toLowerCase());
+    if (exact) return exact;
+    const clash = rows.some(r => String(r.name).toLowerCase() === wanted.toLowerCase());
+    if (!clash) {
+      const id = newId('CAT');
+      await appendRows('Categories', [[id, cellText(wanted), type, type === 'income' ? '#8b5cf6' : '#ef4444', type === 'income' ? 'hand-coins' : 'credit-card', 0, now()]]);
+      return { id, name: wanted, type };
+    }
+  }
+  if (typed.length) return typed[0];
+  throw new Error(`Kategori ${type === 'income' ? 'pemasukan' : 'pengeluaran'} belum tersedia. Tambahkan kategori terlebih dahulu.`);
+}
+
+function billStatusOf(row) {
+  const total = num(row.amount), paid = num(row.paidAmount);
+  if (total > 0 && paid >= total) return 'paid';
+  const left = daysFromToday(row.dueDate);
+  if (left !== null && left < 0) return 'overdue';
+  return paid > 0 ? 'partial' : 'unpaid';
+}
+
+function mapBill(row, catByName) {
+  const total = num(row.amount), paid = num(row.paidAmount);
+  const status = billStatusOf(row);
+  const cat = catByName ? catByName[String(row.category)] : null;
+  return {
+    ...row,
+    amount: total,
+    paidAmount: paid,
+    remaining: Math.max(0, total - paid),
+    status,
+    isOverdue: status === 'overdue',
+    daysLeft: daysFromToday(row.dueDate),
+    categoryId: cat ? cat.id : ''
+  };
+}
+
+function mapLoan(row, accByName) {
+  const total = num(row.amount), paid = num(row.paidAmount);
+  const status = total > 0 && paid >= total ? 'paid' : paid > 0 ? 'partial' : 'unpaid';
+  const acc = accByName ? accByName[String(row.account)] : null;
+  return {
+    ...row,
+    amount: total,
+    paidAmount: paid,
+    remaining: Math.max(0, total - paid),
+    status,
+    accountId: acc ? acc.id : ''
+  };
+}
+
+/* Tulis satu transaksi lengkap (termasuk relasi tagihan/pinjaman). */
+async function appendTransactionRecord(rec) {
+  await appendRows('Transactions', [[
+    rec.id, rec.date, rec.type, rec.category, cellText(rec.description), rec.amount, rec.account,
+    cellText(rec.paymentMethod || '-'), cellText(rec.notes || ''), rec.createdAt, rec.updatedAt,
+    rec.fromAccount || '', rec.toAccount || '', rec.billId || '', rec.loanId || ''
+  ]]);
+}
+
+async function restoreRow(sheetName, values) {
+  await sheetsApi.spreadsheets.values.append({ spreadsheetId: SPREADSHEET_ID, range: `${sheetName}!A:Z`, valueInputOption: 'USER_ENTERED', insertDataOption: 'INSERT_ROWS', requestBody: { values: [values] } });
+  invalidateSheetCache(sheetName);
+}
+
+async function rollbackCreated(pairs) {
+  for (const [sheetName, id] of pairs) {
+    try {
+      const found = await findRow(sheetName, id);
+      if (found) await deleteRow(sheetName, found.rowNumber);
+    } catch (error) {
+      console.error(`[rollback:${sheetName}]`, id, error?.message || error);
+    }
+  }
+}
+
+async function applyLoanPayment(loanId, delta) {
+  const id = clean(loanId);
+  if (!id) return;
+  const found = await findRow('Loans', id);
+  if (!found) return;
+  const loan = found.object;
+  const total = num(loan.amount);
+  const paid = Math.min(total, Math.max(0, num(loan.paidAmount) + Number(delta || 0)));
+  await writeObjectRow('Loans', found.rowNumber, {
+    ...loan,
+    paidAmount: paid,
+    status: paid <= 0 ? 'unpaid' : paid >= total ? 'paid' : 'partial',
+    updatedAt: now()
+  });
+}
+
+/* Kebalikan dari pembayaran: dipakai saat transaksi pembayaran dihapus. */
+async function revertBillPayment(billId, amount, transactionId) {
+  const found = await findRow('Bills', billId);
+  if (!found) return;
+  const bill = found.object;
+  const total = num(bill.amount);
+  const newPaid = Math.max(0, num(bill.paidAmount) - num(amount));
+  const ids = String(bill.transactionIds || '').split(',').map(s => s.trim()).filter(x => x && x !== String(transactionId));
+  const status = newPaid <= 0 ? 'unpaid' : newPaid >= total ? 'paid' : 'partial';
+  await writeObjectRow('Bills', found.rowNumber, {
+    ...bill,
+    paidAmount: newPaid,
+    status,
+    transactionIds: ids.join(','),
+    paymentTransactionId: ids.length ? ids[ids.length - 1] : '',
+    paidAt: status === 'paid' ? (bill.paidAt || now()) : '',
+    updatedAt: now()
+  });
+  if (clean(bill.loanId)) await applyLoanPayment(bill.loanId, -Number(amount || 0));
+}
+
+function validateBill(d = {}) {
+  const name = clean(d.name);
+  const amount = Number(d.amount);
+  if (!name) throw new Error('Nama tagihan wajib diisi.');
+  if (name.length > 120) throw new Error('Nama tagihan maksimal 120 karakter.');
+  if (!Number.isFinite(amount) || amount <= 0) throw new Error('Nominal tagihan harus berupa angka positif.');
+  if (!d.issueDate) throw new Error('Tanggal tagihan wajib diisi.');
+  const issueDate = validateDate(d.issueDate);
+  if (!d.dueDate) throw new Error('Tanggal jatuh tempo wajib diisi.');
+  const dueDate = validateDate(d.dueDate);
+  if (dueDate < issueDate) throw new Error('Jatuh tempo tidak boleh sebelum tanggal tagihan.');
+  if (String(d.notes || '').length > 1000) throw new Error('Catatan terlalu panjang.');
+  return { name, amount, issueDate, dueDate, notes: clean(d.notes) };
+}
+
+async function createBill(d = {}) {
+  return idempotent('createBill', d, async () => {
+    const v = validateBill(d);
+    const cat = await resolveCategory(d.category || d.categoryId, 'expense', 'Tagihan & Utilitas');
+    const id = newId('BILL');
+    const stamp = now();
+    await appendRows('Bills', [[id, cellText(v.name), String(cat.name), v.amount, v.issueDate, v.dueDate, 'unpaid', 0, cellText(v.notes), stamp, stamp, '', '', '', '', '']]);
+    return { success: true, message: 'Tagihan berhasil dibuat', id };
+  });
+}
+
+async function updateBill(d = {}) {
+  const id = clean(d.id);
+  if (!id) throw new Error('ID tagihan tidak valid.');
+  return idempotent('updateBill', d, async () => {
+    const v = validateBill(d);
+    const found = await findRow('Bills', id);
+    if (!found) throw new Error('Tagihan tidak ditemukan.');
+    const bill = found.object;
+    const paid = num(bill.paidAmount);
+    const loanId = clean(bill.loanId);
+    if (loanId && v.amount !== num(bill.amount)) throw new Error('Nominal tagihan pinjaman mengikuti data pinjaman dan tidak dapat diubah di sini.');
+    if (v.amount < paid) throw new Error('Nominal tagihan tidak boleh lebih kecil dari jumlah yang sudah dibayar.');
+    const catName = loanId ? String(bill.category) : String((await resolveCategory(d.category || d.categoryId, 'expense', clean(bill.category) || 'Tagihan & Utilitas')).name);
+    const status = paid <= 0 ? 'unpaid' : paid >= v.amount ? 'paid' : 'partial';
+    await writeObjectRow('Bills', found.rowNumber, {
+      ...bill,
+      name: cellText(v.name),
+      category: catName,
+      amount: v.amount,
+      issueDate: v.issueDate,
+      dueDate: v.dueDate,
+      notes: cellText(v.notes),
+      status,
+      updatedAt: now()
+    });
+    if (loanId) {
+      const loanRow = await findRow('Loans', loanId);
+      if (loanRow) await writeObjectRow('Loans', loanRow.rowNumber, { ...loanRow.object, dueDate: v.dueDate, updatedAt: now() });
+    }
+    return { success: true, message: 'Tagihan berhasil diperbarui', id };
+  });
+}
+
+async function deleteBill(d = {}) {
+  const id = clean(d.id);
+  if (!id) throw new Error('ID tagihan tidak valid.');
+  return idempotent('deleteBill', d, async () => {
+    const found = await findRow('Bills', id);
+    if (!found) return { success: true, message: 'Tagihan sudah tidak ada', id };
+    if (clean(found.object.loanId)) throw new Error('Tagihan ini terikat pada pinjaman. Kelola melalui menu Pinjaman.');
+    if (num(found.object.paidAmount) > 0) throw new Error('Tagihan yang sudah memiliki pembayaran tidak dapat dihapus.');
+    await deleteRow('Bills', found.rowNumber);
+    return { success: true, message: 'Tagihan berhasil dihapus', id };
+  });
+}
+
+async function payBill(d = {}) {
+  const billId = clean(d.id || d.billId);
+  if (!billId) throw new Error('ID tagihan tidak valid.');
+  return idempotent('payBill', d, async () => {
+    const found = await findRow('Bills', billId);
+    if (!found) throw new Error('Tagihan tidak ditemukan.');
+    const bill = found.object;
+    const total = num(bill.amount);
+    const paid = num(bill.paidAmount);
+    const remaining = Math.max(0, total - paid);
+    if (remaining <= 0) throw new Error('Tagihan ini sudah dibayar penuh.');
+    const amount = d.amount === undefined || d.amount === null || d.amount === '' ? remaining : Number(d.amount);
+    if (!Number.isFinite(amount) || amount <= 0) throw new Error('Nominal pembayaran harus berupa angka positif.');
+    if (amount > remaining) throw new Error(`Nominal pembayaran melebihi sisa tagihan (${remaining}).`);
+    const acc = await findByIdOrName('Accounts', d.accountId || d.account);
+    if (!acc) throw new Error('Akun pembayaran tidak ditemukan.');
+    const cat = await resolveCategory(bill.category, 'expense', clean(bill.category) || 'Tagihan & Utilitas');
+    const date = d.date ? validateDate(d.date) : localToday();
+    const stamp = now();
+    const txId = newId('TXN');
+    const label = String(bill.name || 'tagihan').slice(0, 90);
+    const alreadyPrefixed = /^pembayaran\b/i.test(label);
+    const notes = clean(d.notes) || (alreadyPrefixed ? label : `Pembayaran tagihan ${label}`).slice(0, 1000);
+    await appendTransactionRecord({
+      id: txId,
+      date,
+      type: 'expense',
+      category: String(cat.name),
+      description: (alreadyPrefixed ? label : `Pembayaran ${label}`).slice(0, 150),
+      amount,
+      account: String(acc.name),
+      paymentMethod: '-',
+      notes,
+      createdAt: stamp,
+      updatedAt: stamp,
+      billId,
+      loanId: clean(bill.loanId)
+    });
+    const newPaid = paid + amount;
+    const status = newPaid >= total ? 'paid' : 'partial';
+    const ids = [clean(bill.transactionIds), txId].filter(Boolean).join(',');
+    try {
+      await writeObjectRow('Bills', found.rowNumber, {
+        ...bill,
+        paidAmount: newPaid,
+        status,
+        paymentAccount: String(acc.name),
+        paymentTransactionId: txId,
+        transactionIds: ids,
+        paidAt: status === 'paid' ? stamp : clean(bill.paidAt),
+        updatedAt: stamp
+      });
+    } catch (error) {
+      await rollbackCreated([['Transactions', txId]]);
+      throw error;
+    }
+    if (clean(bill.loanId)) await applyLoanPayment(bill.loanId, amount);
+    return {
+      success: true,
+      message: status === 'paid' ? 'Tagihan berhasil dibayar dan lunas.' : 'Pembayaran sebagian berhasil dicatat.',
+      billId,
+      transactionId: txId,
+      amount,
+      remaining: Math.max(0, total - newPaid)
+    };
+  });
+}
+
+function validateLoan(d = {}) {
+  const lender = clean(d.lender || d.name);
+  if (!lender) throw new Error('Nama pemberi pinjaman wajib diisi.');
+  if (lender.length > 100) throw new Error('Nama pemberi pinjaman maksimal 100 karakter.');
+  const amount = Number(d.amount);
+  if (!Number.isFinite(amount) || amount <= 0) throw new Error('Nominal pinjaman harus berupa angka positif.');
+  if (!d.date) throw new Error('Tanggal pinjaman wajib diisi.');
+  const date = validateDate(d.date);
+  if (!d.dueDate) throw new Error('Tanggal jatuh tempo wajib diisi.');
+  const dueDate = validateDate(d.dueDate);
+  if (dueDate < date) throw new Error('Jatuh tempo tidak boleh sebelum tanggal pinjaman.');
+  if (String(d.notes || '').length > 1000) throw new Error('Catatan terlalu panjang.');
+  return { lender, amount, date, dueDate, notes: clean(d.notes) };
+}
+
+async function createLoan(d = {}) {
+  return idempotent('createLoan', d, async () => {
+    const v = validateLoan(d);
+    const acc = await findByIdOrName('Accounts', d.accountId || d.account);
+    if (!acc) throw new Error('Akun penerima dana tidak ditemukan.');
+    const incomeCat = await resolveCategory(d.category || d.categoryId, 'income', 'Pinjaman');
+    const payCat = await resolveCategory('', 'expense', 'Cicilan & Pinjaman');
+    const loanId = newId('LOAN');
+    const billId = newId('BILL');
+    const txId = newId('TXN');
+    const stamp = now();
+    const label = v.lender.length > 90 ? `${v.lender.slice(0, 90)}…` : v.lender;
+    await appendTransactionRecord({
+      id: txId,
+      date: v.date,
+      type: 'income',
+      category: String(incomeCat.name),
+      description: `Pinjaman dari ${label}`.slice(0, 150),
+      amount: v.amount,
+      account: String(acc.name),
+      paymentMethod: '-',
+      notes: v.notes,
+      createdAt: stamp,
+      updatedAt: stamp,
+      billId: '',
+      loanId
+    });
+    try {
+      await appendRows('Loans', [[loanId, cellText(v.lender), v.amount, v.date, String(acc.name), v.dueDate, cellText(v.notes), 'unpaid', 0, stamp, stamp, txId, String(incomeCat.name), billId]]);
+      await appendRows('Bills', [[billId, cellText(`Pembayaran pinjaman ${label}`.slice(0, 120)), String(payCat.name), v.amount, v.date, v.dueDate, 'unpaid', 0, cellText(`Tagihan otomatis untuk pinjaman dari ${label}`.slice(0, 1000)), stamp, stamp, loanId, '', '', '', '']]);
+    } catch (error) {
+      await rollbackCreated([['Bills', billId], ['Loans', loanId], ['Transactions', txId]]);
+      throw error;
+    }
+    return { success: true, message: 'Pinjaman berhasil dicatat', id: loanId, billId, transactionId: txId };
+  });
+}
+
+async function updateLoan(d = {}) {
+  const id = clean(d.id);
+  if (!id) throw new Error('ID pinjaman tidak valid.');
+  return idempotent('updateLoan', d, async () => {
+    const v = validateLoan(d);
+    const found = await findRow('Loans', id);
+    if (!found) throw new Error('Pinjaman tidak ditemukan.');
+    const loan = found.object;
+    const paid = num(loan.paidAmount);
+    const billId = clean(loan.billId);
+    const billRow = billId ? await findRow('Bills', billId) : null;
+    if (paid > 0) {
+      if (v.amount !== num(loan.amount) || v.date !== clean(loan.date).slice(0, 10)) throw new Error('Pinjaman yang sudah memiliki pembayaran hanya dapat diubah nama, jatuh tempo, dan catatannya.');
+      await writeObjectRow('Loans', found.rowNumber, { ...loan, lender: cellText(v.lender), dueDate: v.dueDate, notes: cellText(v.notes), updatedAt: now() });
+      if (billRow) await writeObjectRow('Bills', billRow.rowNumber, { ...billRow.object, dueDate: v.dueDate, updatedAt: now() });
+      return { success: true, message: 'Pinjaman berhasil diperbarui', id };
+    }
+    const acc = await findByIdOrName('Accounts', d.accountId || d.account);
+    if (!acc) throw new Error('Akun penerima dana tidak ditemukan.');
+    const txId = clean(loan.incomeTransactionId);
+    const txRow = txId ? await findRow('Transactions', txId) : null;
+    const stamp = now();
+    try {
+      await writeObjectRow('Loans', found.rowNumber, { ...loan, lender: cellText(v.lender), amount: v.amount, date: v.date, account: String(acc.name), dueDate: v.dueDate, notes: cellText(v.notes), updatedAt: stamp });
+      if (txRow) await writeObjectRow('Transactions', txRow.rowNumber, { ...txRow.object, date: v.date, amount: v.amount, account: String(acc.name), description: cellText(`Pinjaman dari ${v.lender}`.slice(0, 150)), notes: cellText(v.notes), updatedAt: stamp });
+      if (billRow) await writeObjectRow('Bills', billRow.rowNumber, { ...billRow.object, name: cellText(`Pembayaran pinjaman ${v.lender}`.slice(0, 120)), amount: v.amount, issueDate: v.date, dueDate: v.dueDate, updatedAt: stamp });
+    } catch (error) {
+      try { await writeObjectRow('Loans', found.rowNumber, loan); } catch (_) { /* best effort */ }
+      if (txRow) { try { await writeObjectRow('Transactions', txRow.rowNumber, txRow.object); } catch (_) { /* best effort */ } }
+      if (billRow) { try { await writeObjectRow('Bills', billRow.rowNumber, billRow.object); } catch (_) { /* best effort */ } }
+      throw error;
+    }
+    return { success: true, message: 'Pinjaman berhasil diperbarui', id };
+  });
+}
+
+async function deleteLoan(d = {}) {
+  const id = clean(d.id);
+  if (!id) throw new Error('ID pinjaman tidak valid.');
+  return idempotent('deleteLoan', d, async () => {
+    const found = await findRow('Loans', id);
+    if (!found) return { success: true, message: 'Pinjaman sudah tidak ada', id };
+    const loan = found.object;
+    const total = num(loan.amount);
+    const paid = num(loan.paidAmount);
+    if (paid > 0 && paid < total) throw new Error('Pinjaman dengan pembayaran sebagian tidak dapat dihapus.');
+    const billId = clean(loan.billId);
+    const incomeTxId = clean(loan.incomeTransactionId);
+    if (billId) {
+      const billRow = await findRow('Bills', billId);
+      if (billRow) await deleteRow('Bills', billRow.rowNumber);
+    }
+    if (paid <= 0 && incomeTxId) {
+      const txRow = await findRow('Transactions', incomeTxId);
+      if (txRow) await deleteRow('Transactions', txRow.rowNumber);
+    }
+    await updateReferences('loanId', id, '');
+    if (billId) await updateReferences('billId', billId, '');
+    await deleteRow('Loans', found.rowNumber);
+    return { success: true, message: 'Pinjaman berhasil dihapus', id };
+  });
+}
+
+const methods = { getAppData, createTransaction, updateTransaction, deleteTransaction, createCategory, updateCategory, deleteCategory, createAccount, updateAccount, deleteAccount, createTemplate, deleteTemplate, createBill, updateBill, deleteBill, payBill, createLoan, updateLoan, deleteLoan };
 app.get('/health', (_req,res)=>res.json({ok:true,provider:'google-sheets-api'}));
 app.post('/api', async (req,res)=>{
   const {method,payload=null}=req.body||{};
